@@ -1,0 +1,10 @@
+<IfModule mod_rewrite.c>
+  Options +FollowSymlinks -Multiviews
+  RewriteEngine On
+
+  # 根目录优先使用静态首页 index.html
+  # 当存在真实的文件/目录时，直接服务；否则才交给 ThinkPHP
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteRule ^(.*)$ index.php/$1 [QSA,PT,L]
+</IfModule>

@@ -1,0 +1,70 @@
+# ============================================================
+# 游戏战队系统 Nginx 站点配置（PHP 8.1 + MySQL 5.7.43）
+# 将本文件内容加入 nginx/conf/nginx.conf 的 http {} 块中
+# 或保存为 conf/vhost/game-team.conf 后 include
+# ============================================================
+
+server {
+    listen       80;
+    server_name  localhost;                 # 改成你的域名或服务器IP
+
+    # 站点根目录 = 项目的 public 目录（必须是 public，不要指到项目根目录！）
+    root   "C:/work/game-team-system/public";   # Windows 路径示例，用正斜杠
+    # root "/var/www/game-team-system/public";  # Linux 路径示例
+
+    # 根目录优先命中静态首页 index.html，其次才是 index.php
+    index  index.html index.php;
+
+    # 上传大小限制（与代码内 5MB 限制匹配，留一点余量）
+    client_max_body_size 10m;
+
+    # ThinkPHP URL 重写：去掉 index.php
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    # PHP 处理（Windows: php-cgi.exe -b 127.0.0.1:9000）
+    location ~ \.php(/|$) {
+        fastcgi_pass   127.0.0.1:9000;
+        fastcgi_index  index.php;
+        fastcgi_split_path_info ^(.+\.php)(/.*)$;
+        include        fastcgi_params;
+        fastcgi_param  SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param  PATH_INFO $fastcgi_path_info;
+    }
+
+    # 静态资源缓存
+    location ~* \.(css|js|png|jpg|jpeg|gif|webp|svg|ico)$ {
+        expires 7d;
+        access_log off;
+    }
+
+    # 禁止访问敏感文件
+    location ~ /\.(env|git) {
+        deny all;
+    }
+
+    # 安全：禁止上传目录执行脚本
+    location ~* ^/storage/uploads/.*\.(php|phtml|php3|php4|php5|phar|jsp|asp|sh|cgi)$ {
+        deny all;
+    }
+    location ~* ^/storage/.*\.(php|phtml|phar)$ {
+        deny all;
+    }
+
+    # 安全响应头
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+}
+
+# ------------------------------------------------------------
+# 【Windows 下 PHP-CGI 启动方法】（phpStudy 用户可跳过，面板自动处理）
+#   1. 打开 CMD，运行：
+#      C:\php\php-cgi.exe -b 127.0.0.1:9000 -c C:\php\php.ini
+#   2. 保持该窗口运行（可用 NSSM 注册为系统服务实现开机自启）
+#
+# 【需要开启的 PHP 扩展】php.ini 中取消注释：
+#   extension=mysqli / pdo_mysql / mbstring / openssl / fileinfo / curl / gd
+# ------------------------------------------------------------

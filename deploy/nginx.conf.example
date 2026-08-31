@@ -1,0 +1,103 @@
+# ============================================================
+# 游戏战队系统 Nginx 站点配置（PHP 8.1 + MySQL 5.7.43）
+# 将本文件内容加入 nginx/conf/nginx.conf 的 http {} 块中
+# 或保存为 conf/vhost/game-team.conf 后 include
+#
+# v5.7.1 起按「全站 HTTPS」配置：
+#   - 80 端口一律 301 跳转到 443（防止明文会话）
+#   - 443 站点开启 ssl，配合 .env 的 COOKIE_SECURE = true 让会话仅走 HTTPS
+# ============================================================
+
+# -------- HTTP：全部 301 到 HTTPS --------
+server {
+    listen       80;
+    server_name  yys.dpx1.icu;               # 改成你的域名
+    return       301 https://$host$request_uri;
+}
+
+# -------- HTTPS 主站点 --------
+server {
+    listen       443 ssl;
+    server_name  yys.dpx1.icu;               # 改成你的域名
+    # v5.0.0 目录制多租户：只需绑定一个主域名（如 yys.dpx1.icu），
+    # 根路径为入驻平台，/{slug}/ 目录为各战队站点，ThinkPHP 按路径首段分流，无需泛解析/通配符证书
+
+    # SSL 证书（普通单域名证书即可）
+    ssl_certificate      /etc/nginx/ssl/yys.dpx1.icu.pem;       # Windows 用正斜杠路径
+    ssl_certificate_key  /etc/nginx/ssl/yys.dpx1.icu.key;
+    ssl_protocols        TLSv1.2 TLSv1.3;
+    ssl_ciphers          HIGH:!aNULL:!MD5;
+    ssl_session_cache    shared:SSL:10m;
+
+    # 站点根目录 = 项目的 public 目录（必须是 public，不要指到项目根目录！）
+    root   "C:/work/game-team-system/public";   # Windows 路径示例，用正斜杠
+    # root "/var/www/game-team-system/public";  # Linux 路径示例
+
+    # 根目录优先命中静态首页 index.html，其次才是 index.php
+    index  index.html index.php;
+
+    # 上传大小限制（普通上传 5MB；v5.2 起有数据包导入，建议放到 128m，
+    # 同时 php.ini 的 upload_max_filesize / post_max_size 需同步调大）
+    client_max_body_size 128m;
+
+    # ThinkPHP URL 重写：去掉 index.php
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    # PHP 处理（Windows: php-cgi.exe -b 127.0.0.1:9000）
+    location ~ \.php(/|$) {
+        fastcgi_pass   127.0.0.1:9000;
+        fastcgi_index  index.php;
+        fastcgi_split_path_info ^(.+\.php)(/.*)$;
+        include        fastcgi_params;
+        fastcgi_param  SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param  PATH_INFO $fastcgi_path_info;
+    }
+
+    # 静态资源缓存
+    location ~* \.(css|js|png|jpg|jpeg|gif|webp|svg|ico)$ {
+        expires 7d;
+        access_log off;
+    }
+
+    # 禁止访问敏感文件
+    location ~ /\.(env|git) {
+        deny all;
+    }
+
+    # 安全：禁止上传目录执行脚本
+    location ~* ^/storage/uploads/.*\.(php|phtml|php3|php4|php5|phar|jsp|asp|sh|cgi)$ {
+        deny all;
+    }
+    location ~* ^/storage/.*\.(php|phtml|phar)$ {
+        deny all;
+    }
+
+    # 安全响应头（HSTS 让浏览器记住只走 HTTPS，首次访问后生效）
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Strict-Transport-Security "max-age=31536000" always;
+}
+
+# ------------------------------------------------------------
+# 【Windows 下 PHP-CGI 启动方法】（phpStudy 用户可跳过，面板自动处理）
+#   1. 打开 CMD，运行：
+#      C:\php\php-cgi.exe -b 127.0.0.1:9000 -c C:\php\php.ini
+#   2. 保持该窗口运行（可用 NSSM 注册为系统服务实现开机自启）
+#
+# 【需要开启的 PHP 扩展】php.ini 中取消注释：
+#   extension=mysqli / pdo_mysql / mbstring / openssl / fileinfo / curl / gd
+# ------------------------------------------------------------
+
+# ------------------------------------------------------------
+# 【v5.0.0 入驻平台 + 目录制多租户：部署说明】
+#   1. 单域名部署：只需主域名（如 yys.dpx1.icu）+ 普通 SSL 证书，无需泛解析/通配符证书
+#   2. 目录分流：根路径 = 入驻平台；/{slug}/ = 各战队系统（slug 由入驻审核时确定）
+#   3. 数据库：全新安装导入 database/game_team.sql（或宝塔用 game_team_phpmyadmin.sql）
+#      v5 与 v4 结构不兼容，v4 二级域名方案已作废，无升级脚本
+#   4. 平台超管：初始账号 admin / admin123，登录后请立即修改密码
+#   5. 静态首页：public/index.html 为入驻平台宣传页（nginx index 指令优先命中）
+# ------------------------------------------------------------

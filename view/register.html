@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>注册 - 游戏战队系统</title>
+  <style>
+    html, body { margin: 0; padding: 0; }
+    body { background: #f5f5f7; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    #boot { display: flex; align-items: center; justify-content: center; height: 100vh; color: #86868b; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="root"><div id="boot">页面加载中...</div></div>
+
+  <script>window.AUTH_MODE = 'register'; window.SITE_BASE = '<?= \app\service\TenantContext::base() ?>';</script>
+  <script src="<?= asset('/static/vendor/react.production.min.js') ?>"></script>
+  <script src="<?= asset('/static/vendor/react-dom.production.min.js') ?>"></script>
+  <script src="<?= asset('/static/vendor/emotion-react.umd.min.js') ?>"></script>
+  <script src="<?= asset('/static/vendor/emotion-styled.umd.min.js') ?>"></script>
+  <script src="<?= asset('/static/vendor/material-ui.production.min.js') ?>"></script>
+  <script src="<?= asset('/static/vendor/babel.min.js') ?>"></script>
+  <script type="text/babel" data-presets="react" src="<?= asset('/static/js/auth.jsx') ?>"></script>
+</body>
+</html>

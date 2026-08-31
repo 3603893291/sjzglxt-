@@ -1,0 +1,33 @@
+# v5.7.1(L3)：仓库卫生——防止一次 git add . 把数据库口令/凭据/运行产物提交进仓库
+
+# 环境配置（数据库口令、TRUSTED_PROXIES 等，严禁入库）
+.env
+.env.*
+!.env.example
+
+# 运行时产物（会话/缓存/日志/测试库）
+/runtime/
+
+# 用户上传内容（保留占位文件）
+/public/storage/uploads/*
+!/public/storage/uploads/.gitkeep
+!/public/storage/uploads/.htaccess
+
+# SQLite 测试库与日志
+*.sqlite
+*.sqlite3
+*.log
+
+# 工作区/工具目录
+/.workbuddy/
+/.qoder/
+/.trash/
+/outputs/
+/1714e4a7-849d-4e96-b558-6b4f68df69f1/
+
+# 系统与编辑器杂项
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+node_modules/
