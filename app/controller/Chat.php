@@ -19,7 +19,7 @@ class Chat extends AuthBase
         $afterId = (int)$this->request->get('after_id', 0);
 
         $query = ChatMessage::alias('m')
-            ->leftJoin('users u', 'u.id = m.user_id')
+            ->leftJoin('users u', 'u.id = m.user_id AND u.tenant_id = m.tenant_id')
             ->where('m.recalled', 0)
             ->field('m.id, m.user_id, m.content, m.created_at, COALESCE(u.nickname, "已注销用户") AS nickname, u.username, u.role AS user_role, u.role_tags');
 

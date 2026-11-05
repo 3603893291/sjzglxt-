@@ -335,7 +335,7 @@ class BotCommand
     private static function guncodes(int $tid): string
     {
         $list = Db::name('gun_codes')->alias('g')
-            ->leftJoin('users u', 'u.id = g.user_id')
+            ->leftJoin('users u', 'u.id = g.user_id AND u.tenant_id = g.tenant_id')
             ->where('g.tenant_id', $tid)
             ->where('g.status', 'published')
             ->field('g.title, g.code, COALESCE(u.nickname, "已注销用户") AS author')
@@ -595,7 +595,7 @@ class BotCommand
         // 与站内战绩排行同口径：只算已通过审核、本人勾了「战绩公开」的成员；
         // 以前只按 tenant_id 取，把关了公开和待审核的人也列进了群里。
         $rows = Db::name('player_stats')->alias('s')
-            ->leftJoin('users u', 'u.id = s.user_id')
+            ->leftJoin('users u', 'u.id = s.user_id AND u.tenant_id = s.tenant_id')
             ->where('s.tenant_id', $tid)
             ->where('u.status', 'approved')
             ->where('u.stats_public', 1)

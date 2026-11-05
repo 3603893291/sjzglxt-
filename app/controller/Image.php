@@ -19,7 +19,7 @@ class Image extends AuthBase
         $size = min(50, max(1, (int)$this->request->get('size', 12)));
 
         $query = ImageModel::alias('i')
-            ->leftJoin('users u', 'u.id = i.user_id')
+            ->leftJoin('users u', 'u.id = i.user_id AND u.tenant_id = i.tenant_id')
             ->where('i.status', 'approved')
             ->field('i.id, i.title, i.file, i.created_at, COALESCE(u.nickname, "已注销用户") AS uploader, u.username AS uploader_qq');
 

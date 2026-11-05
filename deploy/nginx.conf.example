@@ -8,6 +8,23 @@
 #   - 443 站点开启 ssl，配合 .env 的 COOKIE_SECURE = true 让会话仅走 HTTPS
 # ============================================================
 
+# -------- v5.36.35：认证接口的速率闸（这一行必须待在 http {} 里）--------
+# limit_req_zone 只能写在 http 层：本文件整体 include 进 http {} 时照原样放着即可；
+# 如果你是只把下面的 server {} 拷进 nginx.conf，就把这一行单独拷进 http {}，别跟进去。
+#
+# 为什么要它：应用层那三道（限流、5MB、先查库再收图）全都跑在 PHP 已经把整个请求体收完之后，
+# 管得住「次数」管不住「字节」。这一层在 access 阶段就回 429，nginx 根本不去收那份大 body，
+# 也就不往 php 的请求体临时文件里落——这才是真正能挡住「脚本狂刷把磁盘 IO 打满」的那一道。
+limit_req_zone $binary_remote_addr zone=auth_rate:10m rate=1r/s;
+
+# ⚠ 前面挂了 CDN / 反向代理时先改这里：$binary_remote_addr 拿到的是 CDN 节点 IP，
+#   几十个节点会被当成几十个「客户端」一起限，真人也会被误伤。
+#   要么先用 real_ip 模块还原真实客户端 IP（下面两行按你的 CDN 段放开），要么把这条 location 删掉，
+#   只留应用层那三道闸。
+#   set_real_ip_from  100.64.0.0/10;
+#   real_ip_header    X-Forwarded-For;
+# 本机没有 nginx，这两段（zone 与下面那条 location）没有实测过：改完先 nginx -t，再 nginx -s reload。
+
 # -------- HTTP：全部 301 到 HTTPS --------
 server {
     listen       80;
@@ -36,13 +53,41 @@ server {
     # v5.27.0：官网首页由 ThinkPHP 渲染（view/home.html），index.php 必须排在最前
     index  index.php index.html;
 
-    # 上传大小限制（普通上传 5MB；v5.2 起有数据包导入，建议放到 128m，
-    # 同时 php.ini 的 upload_max_filesize / post_max_size 需同步调大）
-    client_max_body_size 128m;
+    # 上传大小限制（v5.36.35 起：全站默认 8m，数据包导入单独一条 128m）
+    # 站内图片本身限 5MB，8m 给 multipart 的分隔符与表单字段留出余量。
+    # 为什么默认值必须收紧在这一层：请求体是 nginx 先收完、再交给 PHP 的，代码里那道 5MB
+    # 闸只能「收完之后」才判——实测对着 /api/auth/forgot 推一份 30MB 的表单体，服务器整整
+    # 收了 23 秒才回一句「图片大小不能超过 5MB」。谁能往服务器上推多大，只有这里管得住。
+    # 唯一需要大请求体的是数据包导入（v5.2 起），它在下面有自己的 location，别把这里调回 128m。
+    # php.ini 的 upload_max_filesize / post_max_size 要不小于这里（建议 12m / 16m）。
+    client_max_body_size 8m;
+
+    # 注册 / 找回密码：站内仅有的两个「未登录就能提交图片」的入口（v5.36.35 单独一条 location）。
+    # rate=1r/s + burst=3 对真人足够（手滑重试几次都不会撞上），但脚本一秒十几发会立刻吃 429。
+    # 路径两种都要覆盖：/{slug}/api/auth/... 是战队站点真正受理的那条，根路径那条会被控制器 404。
+    # 这段与下面的 location / 用同一套 try_files：内部重定向到 /index.php，ThinkPHP 仍按原始
+    # REQUEST_URI 解析路由，所以不需要在这里重复 fastcgi_param。
+    location ~ ^/([^/]+/)?api/auth/(register|forgot)$ {
+        limit_req zone=auth_rate burst=3 nodelay;
+        limit_req_status 429;
+        try_files $uri /index.php?$query_string;
+    }
 
     # ThinkPHP URL 重写：去掉 index.php
     location / {
         try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    # 数据包导入：站内唯一需要大请求体的入口（v5.36.35 从全站默认里拆出来）。
+    # 这条必须自己把请求交给 PHP，不能靠 try_files 转成 /index.php —— 那样会落回下面那条
+    # \.php 的 location，用的是全站 8m，这里写的 128m 就白写了。
+    # 改了这段先 nginx -t 再 nginx -s reload；导入失败先看是不是这里没匹配上。
+    location = /api/platform/my/data/import {
+        client_max_body_size 128m;
+        fastcgi_pass   127.0.0.1:9000;
+        include        fastcgi_params;
+        fastcgi_param  SCRIPT_FILENAME $document_root/index.php;
+        fastcgi_param  SCRIPT_NAME     /index.php;
     }
 
     # PHP 处理（Windows: php-cgi.exe -b 127.0.0.1:9000）

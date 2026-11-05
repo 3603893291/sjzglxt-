@@ -7,7 +7,7 @@ use app\model\User;
 use think\facade\Db;
 
 // 全局前端资源版本号（v5.11.0）：每次发版改一次，配合 asset() 强制浏览器刷新 JS/CSS
-define('ASSET_BUILD', '5.36.34');
+define('ASSET_BUILD', '5.36.35');
 
 /**
  * API 成功响应
@@ -233,6 +233,21 @@ function admin_can_any(array $perms, ?User $user = null): bool
         }
     }
     return false;
+}
+
+/**
+ * v5.36.35：按 id 改数据的接口，在 find() 之后再把归属租户显式比一次
+ * 模型的全局作用域（BelongsToTenant）本就把跨租户的 find 拦成 null，但那是唯一一道闸；
+ * 哪天某个查询绕开模型（原生 Db 查询、新的 leftJoin、或以后有人去掉作用域），
+ * 这一行就是最后一道硬约束。取 getData() 的真实列，不受获取器/hidden 影响；
+ * 行上没有 tenant_id 时取到 null → 转 0 → 与租户 id（≥2）不等 → 判为不属于本队（失败即拒）。
+ */
+function tenant_owns($row): bool
+{
+    if (!$row) {
+        return false;
+    }
+    return (int)$row->getData('tenant_id') === \app\service\TenantContext::id();
 }
 
 /**

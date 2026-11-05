@@ -351,7 +351,7 @@ class Passport extends BaseController
         try {
             $rows = Db::name('passport_links')->alias('l')
                 ->join('tenants t', 't.admin_user_id = l.user_id AND t.id = l.tenant_id')
-                ->join('users u', 'u.id = l.user_id')
+                ->join('users u', 'u.id = l.user_id AND u.tenant_id = l.tenant_id')
                 ->where('l.passport_sub', $sub)
                 ->where('l.tenant_id', '>', 0)
                 ->where('u.status', 'approved')

@@ -67,6 +67,9 @@ class BlacklistAdmin extends AdminBase
             if (!$row) {
                 return api_err('记录不存在', 404);
             }
+            if (!tenant_owns($row)) {
+                return api_err('记录不存在', 404);
+            }
             $row->save(['qq' => $qq, 'nickname' => $nickname, 'reason' => $reason]);
             admin_log('黑名单', '编辑黑名单条目 QQ=' . $qq);
             return api_ok([], '已更新');
@@ -90,6 +93,9 @@ class BlacklistAdmin extends AdminBase
         }
         $row = Blacklist::find((int)$id);
         if (!$row) {
+            return api_err('记录不存在', 404);
+        }
+        if (!tenant_owns($row)) {
             return api_err('记录不存在', 404);
         }
         admin_log('黑名单', '移出黑名单 QQ=' . $row->qq);

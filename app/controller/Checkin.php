@@ -47,7 +47,7 @@ class Checkin extends AuthBase
         $teamTop = [];
         if ($me->team_id) {
             $teamTop = Db::name('checkins')->alias('c')
-                ->leftJoin('users u', 'u.id = c.user_id')
+                ->leftJoin('users u', 'u.id = c.user_id AND u.tenant_id = c.tenant_id')
                 ->where('c.tenant_id', $tid)
                 ->where('c.checkin_date', $today)
                 ->where('u.team_id', $me->team_id)

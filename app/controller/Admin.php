@@ -80,6 +80,9 @@ class Admin extends AdminBase
         if (!$user) {
             return api_err('用户不存在', 404);
         }
+        if (!tenant_owns($user)) {
+            return api_err('用户不存在', 404);
+        }
         if ($user->status !== 'pending') {
             return api_err('该用户已审核过');
         }
@@ -162,6 +165,9 @@ class Admin extends AdminBase
         }
         $action = (string)$this->request->post('action', '');
         $user   = User::find((int)$row['user_id']);
+        if ($user && !tenant_owns($user)) {
+            $user = null;
+        }
 
         if ($action === 'approve') {
             // v5.15.0(S-L2)：新密码哈希是申请当时就落库的，表里没有过期列；
@@ -215,7 +221,7 @@ class Admin extends AdminBase
         $keyword = trim((string)$this->request->get('keyword', ''));
 
         $query = User::alias('u')
-            ->leftJoin('teams t', 't.id = u.team_id')
+            ->leftJoin('teams t', 't.id = u.team_id AND t.tenant_id = u.tenant_id')
             ->field('u.id, u.username, u.nickname, u.email, u.role, u.status, u.muted, u.muted_by, u.team_id,
                      u.game_side, u.game_side_lock,
                      t.name AS team_name, u.profile_image, u.reg_ip, u.reg_region, u.created_at, u.role_tags');
@@ -272,6 +278,9 @@ class Admin extends AdminBase
         if (!$user) {
             return api_err('用户不存在', 404);
         }
+        if (!tenant_owns($user)) {
+            return api_err('用户不存在', 404);
+        }
         if ($this->isSuperAdmin($user)) {
             return api_err('系统管理员账号受保护，不能进行此操作');
         }
@@ -306,6 +315,9 @@ class Admin extends AdminBase
         if (!$user) {
             return api_err('用户不存在', 404);
         }
+        if (!tenant_owns($user)) {
+            return api_err('用户不存在', 404);
+        }
         if ($this->isSuperAdmin($user)) {
             return api_err('系统管理员账号受保护，不能进行此操作');
         }
@@ -335,6 +347,9 @@ class Admin extends AdminBase
         $user  = User::find((int)$id);
 
         if (!$user) {
+            return api_err('用户不存在', 404);
+        }
+        if (!tenant_owns($user)) {
             return api_err('用户不存在', 404);
         }
         if ($this->isSuperAdmin($user)) {
@@ -384,6 +399,9 @@ class Admin extends AdminBase
         if (!$user) {
             return api_err('用户不存在', 404);
         }
+        if (!tenant_owns($user)) {
+            return api_err('用户不存在', 404);
+        }
         if ($this->isSuperAdmin($user)) {
             return api_err('系统管理员账号受保护，不能进行此操作');
         }
@@ -411,6 +429,9 @@ class Admin extends AdminBase
         $user     = User::find((int)$id);
 
         if (!$user) {
+            return api_err('用户不存在', 404);
+        }
+        if (!tenant_owns($user)) {
             return api_err('用户不存在', 404);
         }
         if ($this->isSuperAdmin($user)) {
@@ -493,6 +514,9 @@ class Admin extends AdminBase
             if (!$tag) {
                 return api_err('标签不存在', 404);
             }
+            if (!tenant_owns($tag)) {
+                return api_err('标签不存在', 404);
+            }
             $tag->save(['name' => $name, 'color' => $color]);
             admin_log('职责标签', '修改标签「' . $name . '」');
             return api_ok([], '标签已保存');
@@ -511,6 +535,9 @@ class Admin extends AdminBase
         }
         $tag = RoleTagModel::find((int)$id);
         if (!$tag) {
+            return api_err('标签不存在', 404);
+        }
+        if (!tenant_owns($tag)) {
             return api_err('标签不存在', 404);
         }
         $tagId = (int)$id;
@@ -557,6 +584,9 @@ class Admin extends AdminBase
         }
         $user = User::find((int)$id);
         if (!$user) {
+            return api_err('用户不存在', 404);
+        }
+        if (!tenant_owns($user)) {
             return api_err('用户不存在', 404);
         }
         // v5.3.1：真超管（内置 admin / 租户站长）受保护，非超管不能给超管分配标签；
@@ -667,6 +697,9 @@ class Admin extends AdminBase
             if (!$leader) {
                 return api_err('指定的队长不存在');
             }
+            if (!tenant_owns($leader)) {
+                return api_err('指定的队长不存在');
+            }
             if ($side !== '') {
                 $ls = (string)($leader->game_side ?? '');
                 if ($ls !== '' && $ls !== $side) {
@@ -678,6 +711,9 @@ class Admin extends AdminBase
         if ($id > 0) {
             $team = TeamModel::find($id);
             if (!$team) {
+                return api_err('小队不存在', 404);
+            }
+            if (!tenant_owns($team)) {
                 return api_err('小队不存在', 404);
             }
             $tdata = [
@@ -719,6 +755,9 @@ class Admin extends AdminBase
         if (!$team) {
             return api_err('小队不存在', 404);
         }
+        if (!tenant_owns($team)) {
+            return api_err('小队不存在', 404);
+        }
         User::where('team_id', $team->id)->update(['team_id' => null]);
         admin_log('小队管理', '解散小队 ' . $team->name);
         $team->delete();
@@ -738,11 +777,17 @@ class Admin extends AdminBase
         if (!$user || $user->status !== 'approved') {
             return api_err('目标用户不存在或未通过审核', 404);
         }
+        if (!tenant_owns($user)) {
+            return api_err('目标用户不存在或未通过审核', 404);
+        }
 
         $teamName = '无小队';
         if ($teamId > 0) {
             $team = TeamModel::find($teamId);
             if (!$team) {
+                return api_err('目标小队不存在', 404);
+            }
+            if (!tenant_owns($team)) {
                 return api_err('目标小队不存在', 404);
             }
             $teamName = $team->name;
@@ -779,7 +824,7 @@ class Admin extends AdminBase
         }
         $status = (string)$this->request->get('status', 'pending');
         $query  = ImageModel::alias('i')
-            ->leftJoin('users u', 'u.id = i.user_id')
+            ->leftJoin('users u', 'u.id = i.user_id AND u.tenant_id = i.tenant_id')
             ->field('i.*, COALESCE(u.nickname, "已注销用户") AS uploader, u.username AS uploader_qq');
 
         if (in_array($status, ['pending', 'approved', 'rejected'], true)) {
@@ -809,6 +854,9 @@ class Admin extends AdminBase
         if (!$image) {
             return api_err('图片不存在', 404);
         }
+        if (!tenant_owns($image)) {
+            return api_err('图片不存在', 404);
+        }
         if (!in_array($action, ['approve', 'reject'], true)) {
             return api_err('非法的操作');
         }
@@ -831,6 +879,9 @@ class Admin extends AdminBase
         }
         $image = ImageModel::find((int)$id);
         if (!$image) {
+            return api_err('图片不存在', 404);
+        }
+        if (!tenant_owns($image)) {
             return api_err('图片不存在', 404);
         }
 
@@ -972,6 +1023,9 @@ class Admin extends AdminBase
         if (!$ann) {
             return api_err('公告不存在', 404);
         }
+        if (!tenant_owns($ann)) {
+            return api_err('公告不存在', 404);
+        }
         admin_log('公告管理', '删除公告 #' . $ann->id . ' ' . $ann->title);
         $ann->delete();
         return api_ok([], '公告已删除');
@@ -987,6 +1041,9 @@ class Admin extends AdminBase
         }
         $ann = Announcement::find((int)$id);
         if (!$ann) {
+            return api_err('公告不存在', 404);
+        }
+        if (!tenant_owns($ann)) {
             return api_err('公告不存在', 404);
         }
         if ((string)$ann->revoked_at !== '') {
@@ -1005,6 +1062,9 @@ class Admin extends AdminBase
         }
         $ann = Announcement::find((int)$id);
         if (!$ann) {
+            return api_err('公告不存在', 404);
+        }
+        if (!tenant_owns($ann)) {
             return api_err('公告不存在', 404);
         }
         if ((string)$ann->revoked_at === '') {
@@ -1077,6 +1137,9 @@ class Admin extends AdminBase
         if (!$race) {
             return api_err('时间点不存在', 404);
         }
+        if (!tenant_owns($race)) {
+            return api_err('时间点不存在', 404);
+        }
         admin_log('撞车时间', '删除撞车场次 #' . $race->id . '（' . $race->race_time . '）');
         $race->delete();
         return api_ok([], '已删除');
@@ -1144,6 +1207,9 @@ class Admin extends AdminBase
         if (!$race) {
             return api_err('日程不存在', 404);
         }
+        if (!tenant_owns($race)) {
+            return api_err('日程不存在', 404);
+        }
         admin_log('自建房日程', '删除自建房场次 #' . $race->id . '（' . $race->race_time . '）');
         $race->delete();
         return api_ok([], '已删除');
@@ -1160,7 +1226,7 @@ class Admin extends AdminBase
             return api_err('IP 封禁全平台生效，仅超级管理员可管理', 403, 403);
         }
         $list = BlockedIp::alias('b')
-            ->leftJoin('users u', 'u.id = b.blocked_by')
+            ->leftJoin('users u', 'u.id = b.blocked_by AND u.tenant_id = ' . TenantContext::id())
             ->field('b.*, COALESCE(u.nickname, "") AS admin_name')
             ->order('b.id', 'desc')
             ->select()
@@ -1277,6 +1343,9 @@ class Admin extends AdminBase
         }
         $user = User::find((int)$id);
         if (!$user) {
+            return api_err('用户不存在', 404);
+        }
+        if (!tenant_owns($user)) {
             return api_err('用户不存在', 404);
         }
         // 管理员角色一律不可改密码（isSuperAdmin 双保险）
@@ -1607,6 +1676,9 @@ class Admin extends AdminBase
 
         $user = User::find($adminId);
         if (!$user || $user->role !== 'admin') {
+            return api_err('目标用户不存在或不是管理员', 404);
+        }
+        if (!tenant_owns($user)) {
             return api_err('目标用户不存在或不是管理员', 404);
         }
         if ($this->isSuperAdmin($user)) {

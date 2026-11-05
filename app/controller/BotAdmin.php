@@ -171,7 +171,7 @@ class BotAdmin extends AuthBase
         }
         $tid  = TenantContext::id();
         $rows = Db::name('bot_user_bindings')->alias('b')
-            ->leftJoin('users u', 'u.id = b.user_id')
+            ->leftJoin('users u', 'u.id = b.user_id AND u.tenant_id = b.tenant_id')
             ->where('b.tenant_id', $tid)
             ->field('b.id, b.user_id, b.created_at, COALESCE(u.nickname, "已注销用户") AS nickname')
             ->order('b.id', 'desc')

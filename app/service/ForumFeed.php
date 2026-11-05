@@ -149,7 +149,7 @@ class ForumFeed
         $keys = array_keys($defs);
         $rows = Db::name('users')->alias('u')
             ->leftJoin('player_stats p', 'p.user_id = u.id AND p.tenant_id = u.tenant_id')
-            ->leftJoin('teams t', 't.id = u.team_id')
+            ->leftJoin('teams t', 't.id = u.team_id AND t.tenant_id = u.tenant_id')
             ->where('u.tenant_id', $tenantId)
             ->where('u.status', 'approved')
             ->where('u.show_public', 1)

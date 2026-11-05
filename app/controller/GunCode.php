@@ -26,7 +26,7 @@ class GunCode extends AuthBase
         $me = current_user();
 
         $query = GunCodeModel::alias('g')
-            ->leftJoin('users u', 'u.id = g.user_id')
+            ->leftJoin('users u', 'u.id = g.user_id AND u.tenant_id = g.tenant_id')
             ->field('g.*, COALESCE(u.nickname, "已注销用户") AS author, u.username AS author_qq, (SELECT COUNT(*) FROM gun_code_comments c WHERE c.gun_code_id = g.id) AS comment_count');
 
         if (!is_admin()) {
@@ -171,7 +171,7 @@ class GunCode extends AuthBase
         }
 
         $list = GunCodeComment::alias('c')
-            ->leftJoin('users u', 'u.id = c.user_id')
+            ->leftJoin('users u', 'u.id = c.user_id AND u.tenant_id = c.tenant_id')
             ->where('c.gun_code_id', $code->id)
             ->field('c.id, c.user_id, c.content, c.created_at, COALESCE(u.nickname, "已注销用户") AS nickname, u.role AS user_role')
             ->order('c.id', 'asc')

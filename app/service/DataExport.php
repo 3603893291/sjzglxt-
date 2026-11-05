@@ -150,7 +150,7 @@ class DataExport
     {
         $owner  = (string)Db::name('tenants')->where('id', $tenantId)->value('admin_username');
         $list   = Db::name('users')->alias('u')
-            ->leftJoin('teams t', 't.id = u.team_id')
+            ->leftJoin('teams t', 't.id = u.team_id AND t.tenant_id = u.tenant_id')
             ->where('u.tenant_id', $tenantId)
             ->field('u.id, u.username, u.nickname, u.role, u.status, u.role_tags, u.created_at,
                      u.last_active_at, t.name AS team_name')

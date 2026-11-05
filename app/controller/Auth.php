@@ -29,6 +29,9 @@ class Auth extends BaseController
         if (\app\service\TenantContext::isPlatform()) {
             return api_err('接口不存在', 404, 404);
         }
+        if ($over = $this->oversizedBody()) {
+            return api_err($over);
+        }
         // IP 封禁检查（防爆破：自动封禁 + 管理员手动封禁）
         if ($err = $this->checkIpBlocked()) {
             return $err;
@@ -84,17 +87,28 @@ class Auth extends BaseController
         // 注册 IP 与归属地（v3.9.5：走 CDN 时取真实客户端 IP）
         $ip = client_ip();
 
-        User::create([
-            'username'      => $qq,
-            'password'      => password_hash($password, PASSWORD_DEFAULT),
-            'nickname'      => $nickname,
-            'email'         => $email,
-            'profile_image' => $path,
-            'reg_ip'        => $ip,
-            'reg_region'    => IpRegion::lookup($ip),
-            'role'          => 'user',
-            'status'        => 'pending',   // 注册后需管理员审核
-        ]);
+        // 上面那次查重和这条插入之间没有锁：两个请求同时提交同一个 QQ，两个都查不到人，
+        // 后到的那个由 users 的 uk_tenant_username 拦下（v5.36.35）。拦下不等于可以装死——
+        // 截图此刻已经在盘上了，不删就是没人引用的孤儿文件，往外抛就是一张 500。
+        try {
+            User::create([
+                'username'      => $qq,
+                'password'      => password_hash($password, PASSWORD_DEFAULT),
+                'nickname'      => $nickname,
+                'email'         => $email,
+                'profile_image' => $path,
+                'reg_ip'        => $ip,
+                'reg_region'    => IpRegion::lookup($ip),
+                'role'          => 'user',
+                'status'        => 'pending',   // 注册后需管理员审核
+            ]);
+        } catch (\Throwable $e) {
+            ImageUpload::delete($path);
+            if (self::isDuplicateKey($e)) {
+                return api_err('该 QQ 号已注册，请直接登录');
+            }
+            throw $e;
+        }
 
         return api_ok([], '注册成功！账号需管理员审核通过后才能登录，请耐心等待');
     }
@@ -227,6 +241,23 @@ class Auth extends BaseController
         return api_ok($this->userInfo($user));
     }
 
+    /**
+     * v5.36.35：未登录接口上的第一道闸——按请求头声明的 body 大小早退
+     * 应用层的限流、校验、查库全在 PHP 收完整个请求体之后才跑：那一层管得住「次数」，管不住「字节」。
+     * 这一道至少能把超限请求挡在限流计数、图片校验和落盘之前；真要「一个字节都不收」，只有 nginx 的
+     * client_max_body_size 做得到（见 deploy/nginx.conf.example）。分块传输（没带 Content-Length）在这里放过去，
+     * 仍由 ImageUpload 的 5MB 上限兜住。
+     * 文案与 ImageUpload 里那条超限提示逐字一致：不能让「超限」本身又变成一个可分辨的信号。
+     */
+    private function oversizedBody(): ?string
+    {
+        $len = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+        if ($len > ImageUpload::MAX_SIZE + 1048576) {
+            return '图片大小不能超过 5MB';
+        }
+        return null;
+    }
+
     // IP 是否已被封禁（命中则拒绝登录/注册）
     private function checkIpBlocked()
     {
@@ -296,6 +327,9 @@ class Auth extends BaseController
         if (\app\service\TenantContext::isPlatform()) {
             return api_err('接口不存在', 404, 404);
         }
+        if ($over = $this->oversizedBody()) {
+            return api_err($over);
+        }
         if ($err = $this->checkIpBlocked()) {
             return $err;
         }
@@ -326,36 +360,64 @@ class Auth extends BaseController
 
         Cache::set($rateKey, (int)Cache::get($rateKey, 0) + 1, 3600);
 
-        // 上传新的游戏个人主页截图（必填，作为身份佐证随申请一起审核）
+        // v5.36.35：先只校验、不落盘。查无此人和已有一张待审单这两种情形都不该把这张图写进磁盘。
+        // 校验本身一步都不能省，文案也必须和 save() 逐字一致——省掉它，「会报错的那个就在册」
+        // 就变成了一台账号存在性探针，比省下的那点写入贵得多。
         $upFiles = $this->request->file();
-        [$path, $err] = ImageUpload::save($upFiles['file'] ?? null, 'profiles');
+        $file    = $upFiles['file'] ?? null;
+        $bad     = ImageUpload::validate($file);
+        if ($bad !== null) {
+            return api_err($bad);
+        }
+
+        // 三种情形对外都是同一句话：登记成功、查无此人、已有一张待审的单
+        $done = '申请已受理，管理员审核通过后即可使用新密码登录';
+
+        $user = User::where('username', $qq)->where('status', 'approved')->find();
+        if (!$user) {
+            return api_ok([], $done);
+        }
+        $tid = \app\service\TenantContext::id();
+        if (Db::name('password_resets')
+                ->where('tenant_id', $tid)
+                ->where('user_id', $user->id)->find()) {
+            // 已有待审申请：不重复登记，也不再收一张新图（旧那张还在审核台上）
+            return api_ok([], $done);
+        }
+
+        [$path, $err] = ImageUpload::save($file, 'profiles');
         if ($err !== null) {
             return api_err($err);
         }
-
-        // 仅对在册（审核通过）账号落库；其余情形静默丢弃截图，对外文案保持一致
-        $user = User::where('username', $qq)->where('status', 'approved')->find();
-        if ($user) {
-            $pending = Db::name('password_resets')
-                ->where('tenant_id', \app\service\TenantContext::id())
-                ->where('user_id', $user->id)->find();
-            if (!$pending) {
-                Db::name('password_resets')->insert([
-                    'tenant_id'    => \app\service\TenantContext::id(),
-                    'user_id'      => $user->id,
-                    'new_password' => password_hash($password, PASSWORD_DEFAULT),
-                    'screenshot'   => $path,
-                    'request_ip'   => client_ip(),
-                    'created_at'   => date('Y-m-d H:i:s'),
-                ]);
-            } else {
-                // 已有待审申请：不重复登记，新截图即时清理防止沉淀垃圾数据
-                ImageUpload::delete($path);
-            }
-        } else {
+        try {
+            Db::name('password_resets')->insert([
+                'tenant_id'    => $tid,
+                'user_id'      => $user->id,
+                'new_password' => password_hash($password, PASSWORD_DEFAULT),
+                'screenshot'   => $path,
+                'request_ip'   => client_ip(),
+                'created_at'   => date('Y-m-d H:i:s'),
+            ]);
+        } catch (\Throwable $e) {
+            // password_resets 上有 (tenant_id, user_id) 唯一键：上面那次「有没有待审单」的查询
+            // 与这条插入之间没有锁，同队同一个人连点两次会同时通过查询，后到的撞在键上。
+            // 撞了就当「已经有一张待审的单」——对外同一句话，但刚落的图必须马上删掉，不然就是孤儿。
             ImageUpload::delete($path);
+            if (!self::isDuplicateKey($e)) {
+                throw $e;
+            }
         }
-        return api_ok([], '申请已受理，管理员审核通过后即可使用新密码登录');
+        return api_ok([], $done);
+    }
+
+    /**
+     * 是不是唯一键冲突：MySQL 说 Duplicate entry，SQLite 说 UNIQUE constraint failed，
+     * 两边都算「这行已经有了」，别的数据库错误不能顺手吞掉。
+     */
+    private static function isDuplicateKey(\Throwable $e): bool
+    {
+        $m = strtolower($e->getMessage());
+        return strpos($m, 'duplicate entry') !== false || strpos($m, 'unique constraint') !== false;
     }
 
     // ============ 找回密码·邮箱验证码（v5.36.34） ============

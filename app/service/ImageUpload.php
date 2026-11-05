@@ -15,24 +15,29 @@ class ImageUpload
     public const MAX_SIZE   = 5 * 1024 * 1024; // 5MB
 
     /**
-     * 校验并保存上传图片
+     * 只校验、不落盘。
+     *
+     * 找回密码那条路要先知道「这个 QQ 在不在册」才知道这张图到底要不要留，但校验不能跳过：
+     * 查无此人就少报一句「请选择要上传的图片」，攻击者带一张坏图试两次，报错的那个就在册——
+     * 账号存在性探针就这么长出来了。所以那一路先跑本方法（文案与 save() 逐字一致），
+     * 确认这张图真要用，再调 save()。
+     *
      * @param UploadedFile|null $file 上传文件
-     * @param string $subDir 子目录名（如 images / profiles / announcements）
-     * @return array [相对路径, 错误信息] —— 成功时错误信息为 null
+     * @return string|null 错误信息，null 表示校验通过
      */
-    public static function save($file, string $subDir): array
+    public static function validate($file): ?string
     {
         if (!$file) {
-            return [null, '请选择要上传的图片'];
+            return '请选择要上传的图片';
         }
 
         $ext  = strtolower($file->getOriginalExtension());
         $mime = $file->getOriginalMime();
         if (!in_array($ext, self::ALLOW_EXT, true) || !in_array($mime, self::ALLOW_MIME, true)) {
-            return [null, '仅支持 jpg / png / gif / webp 格式图片'];
+            return '仅支持 jpg / png / gif / webp 格式图片';
         }
         if ($file->getSize() > self::MAX_SIZE) {
-            return [null, '图片大小不能超过 5MB'];
+            return '图片大小不能超过 5MB';
         }
         // 服务端内容校验：客户端声明的 MIME 可伪造，必须验证文件真实内容。
         // v5.15.1：判定以「文件头」为准——getimagesize() 只认签名，把 txt 改名成 .png 照样过不去；
@@ -44,11 +49,11 @@ class ImageUpload
         $tmpPath = $file->getPathname();
         $info   = @getimagesize($tmpPath);
         if ($info === false || !isset($info[2])) {
-            return [null, '文件内容不是有效图片，已拒绝'];
+            return '文件内容不是有效图片，已拒绝';
         }
         $sniffed = image_type_to_mime_type((int)$info[2]);   // 由文件头得出的真实类型
         if (!in_array($sniffed, self::ALLOW_MIME, true)) {
-            return [null, '仅支持 jpg / png / gif / webp 格式图片'];
+            return '仅支持 jpg / png / gif / webp 格式图片';
         }
         try {
             if (class_exists('finfo')) {
@@ -57,11 +62,27 @@ class ImageUpload
                 // 返回 false 或 application/octet-stream 属于环境识别力问题，不作为拒绝依据
                 if (is_string($detected) && $detected !== $sniffed
                     && in_array($detected, self::ALLOW_MIME, true)) {
-                    return [null, '文件内容与声明的图片格式不符，已拒绝'];
+                    return '文件内容与声明的图片格式不符，已拒绝';
                 }
             }
         } catch (\Throwable $e) {
             // fileinfo 不可用时退回纯文件头判定，不阻断上传
+        }
+
+        return null;
+    }
+
+    /**
+     * 校验并保存上传图片
+     * @param UploadedFile|null $file 上传文件
+     * @param string $subDir 子目录名（如 images / profiles / announcements）
+     * @return array [相对路径, 错误信息] —— 成功时错误信息为 null
+     */
+    public static function save($file, string $subDir): array
+    {
+        $err = self::validate($file);
+        if ($err !== null) {
+            return [null, $err];
         }
 
         // v5.1.0：租户存储配额校验——上传前检查剩余空间是否够
@@ -70,6 +91,7 @@ class ImageUpload
             return [null, $err];
         }
 
+        $ext      = strtolower($file->getOriginalExtension());
         $saveName = bin2hex(random_bytes(16)) . '.' . $ext;
         $savePath = public_path() . 'storage' . DIRECTORY_SEPARATOR . 'uploads'
             . DIRECTORY_SEPARATOR . $subDir . DIRECTORY_SEPARATOR . date('Ymd');
