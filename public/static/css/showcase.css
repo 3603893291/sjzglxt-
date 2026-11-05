@@ -1,0 +1,372 @@
+/* ============================================================
+   战队对外展示页与公示大厅（v5.20.0）
+   版式沿用站内 app.css / auth.css 那套设计令牌：浅灰底 + 白卡 + 细边框 + 一个主色，
+   无渐变、弱阴影。这两个页面是服务端直出的纯 HTML，不加载 React/MUI/Babel
+   （见 app/controller/Showcase.php），所以这里自带一套与站内同源的变量。
+   断点：1280 内容容器 / 900 平板 / 560 手机
+   ============================================================ */
+
+:root {
+  --sc-bg: #f4f6f8;
+  --sc-bg2: #eef1f5;
+  --sc-card: #ffffff;
+  --sc-card2: #fafbfc;
+  --sc-line: #e3e8ee;
+  --sc-line-strong: #d3dae3;
+  --sc-text: #17233d;
+  --sc-sub: #3d4a63;
+  /* 站内 --muted 是 #8a94a6（白底上只有 3.06:1）；访客页小字多，同色系压深一档到 6.2:1 */
+  --sc-dim: #5f6b7f;
+  --sc-accent: #0f766e;
+  --sc-accent-dark: #0b5d57;
+  --sc-accent-soft: #eef6f5;
+  /* 上面 3 个连同下面 4 个，会被展示页顶部的内联 <style> 按该队自选队色整组覆盖
+     （app/service/Showcase.php::accentTokens）：accent-text 是在白底上读得清的强调字，
+     solid / solid-ink / solid-dark 是色块底（按钮、标识块、底部常驻 CTA）与其上的字。
+     该队没选队色时就用这套站内默认青绿。 */
+  --sc-accent-text: #0f766e;
+  --sc-accent-rgb: 15, 118, 110;
+  --sc-solid: #0f766e;
+  --sc-solid-ink: #ffffff;
+  --sc-solid-dark: #0b5d57;
+  --sc-btn-off: #9cc5c0;
+  --sc-accent2: #9d5c19;   /* 站内 --warning #b06a1f 在白底 4.26:1，这里压深到 5.28:1 */
+  --sc-good: #2e7d46;
+  --sc-bad: #c93b3b;
+  --sc-off: #a7b0bf;
+  --sc-radius: 10px;
+  --sc-shadow: 0 1px 2px rgba(23, 35, 61, .05);
+  /* 全站两档纵向节奏：区块之间 --sc-sec-gap，卡片之间 --sc-gap */
+  --sc-sec-gap: 34px;
+  --sc-gap: 14px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--sc-bg);
+  color: var(--sc-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  font-size: 14px;
+  -webkit-text-size-adjust: 100%;
+}
+
+a { color: inherit; text-decoration: none; }
+img { display: block; max-width: 100%; }
+
+/* ---------- 顶栏（吸顶） ---------- */
+.sc-nav {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: rgba(255, 255, 255, .94);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--sc-line);
+}
+.sc-nav .sc-mark {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--sc-solid-ink);
+  background: var(--sc-solid);
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+.sc-nav .sc-mark img { width: 100%; height: 100%; object-fit: cover; }
+.sc-nav .sc-title { font-weight: 600; font-size: 15px; }
+.sc-nav .sc-spacer { flex: 1 1 auto; }
+.sc-nav .sc-back { display: inline-flex; align-items: center; min-height: 40px; font-size: 13px; color: var(--sc-dim); }
+.sc-nav .sc-back:hover { color: var(--sc-accent-text); }
+.sc-nav .sc-btn-sm { padding: 8px 14px; font-size: 13px; min-height: 36px; }
+
+/* ---------- 容器 ---------- */
+.sc-wrap { max-width: 1280px; margin: 0 auto; padding: 0 20px 96px; }
+.sc-sec { margin-top: var(--sc-sec-gap); }
+.sc-h2 {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 17px; font-weight: 600;
+  margin: 0 0 14px;
+  letter-spacing: .2px;
+}
+.sc-h2::before {
+  content: ""; width: 4px; height: 17px; border-radius: 2px;
+  background: var(--sc-accent);
+}
+.sc-h2 .sc-more { font-size: 12px; font-weight: 400; color: var(--sc-dim); }
+
+/* ---------- Hero ---------- */
+.sc-hero {
+  position: relative;
+  margin-top: 22px;
+  border-radius: var(--sc-radius);
+  overflow: hidden;
+  border: 1px solid var(--sc-line);
+  background: var(--sc-card);
+  box-shadow: var(--sc-shadow);
+}
+/* 队长传的首屏图就是主视觉：按原图铺开，不再压成 18% 的淡底 */
+.sc-hero .sc-banner { display: block; width: 100%; height: 240px; object-fit: cover; }
+/* 实心队色带：solid 与 solid-ink 是 accentTokens 配好的一对（对比度已 ≥4.5:1），字压在色上真读得清 */
+.sc-band {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 16px 22px;
+  background: var(--sc-solid); color: var(--sc-solid-ink);
+}
+.sc-band .sc-badge-logo { background: #fff; color: var(--sc-solid-dark); }
+.sc-band .sc-team-name { flex: 1 1 220px; }
+.sc-hero .sc-inner { position: relative; padding: 18px 22px 22px; }
+.sc-hero .sc-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.sc-badge-logo {
+  width: 72px; height: 72px; border-radius: 14px;
+  display: grid; place-items: center;
+  font-size: 30px; font-weight: 600; color: var(--sc-solid-ink);
+  background: var(--sc-solid);
+  overflow: hidden; flex: 0 0 auto;
+}
+.sc-badge-logo img { width: 100%; height: 100%; object-fit: cover; }
+.sc-team-name { font-size: 26px; line-height: 1.25; font-weight: 700; margin: 0; }
+/* 口号写在浅色面上：它是一句说明，不是标语，不给大字号 */
+.sc-slogan { color: var(--sc-dim); margin: 0 0 16px; font-size: 14px; }
+.sc-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--sc-line); background: var(--sc-card2);
+  color: var(--sc-sub);
+}
+.sc-chip.live { color: var(--sc-good); border-color: rgba(46, 125, 70, .32); background: rgba(46, 125, 70, .08); }
+.sc-chip.live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sc-good); animation: sc-pulse 1.6s infinite; }
+.sc-chip.closed { color: var(--sc-dim); }
+@keyframes sc-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+
+/* 数据条 */
+.sc-stats { display: grid; grid-template-columns: repeat(var(--sc-n, 4), minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.sc-stat { background: var(--sc-card2); border: 1px solid var(--sc-line); border-radius: 8px; padding: 13px 15px; }
+.sc-stat b { display: block; font-size: 22px; font-weight: 700; }
+.sc-stat span { font-size: 12px; color: var(--sc-dim); }
+.sc-dots { display: inline-flex; gap: 5px; margin-top: 6px; }
+.sc-dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--sc-line-strong); display: inline-block; }
+.sc-dots i.w { background: var(--sc-good); }
+.sc-dots i.l { background: var(--sc-bad); }
+.sc-dots i.d { background: var(--sc-accent2); }
+
+/* ---------- 通用卡片 ---------- */
+.sc-grid { display: grid; gap: var(--sc-gap); }
+.sc-grid.pos { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.sc-grid.honor { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.sc-grid.people { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.sc-grid.gal { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.sc-card {
+  background: var(--sc-card); border: 1px solid var(--sc-line);
+  border-radius: var(--sc-radius); padding: 14px;
+  box-shadow: var(--sc-shadow);
+}
+.sc-card .k { font-size: 14px; font-weight: 600; margin: 0 0 6px; }
+.sc-card .v { font-size: 12px; color: var(--sc-dim); line-height: 1.6; }
+.sc-card.honor { text-align: center; padding: 16px 12px; }
+.sc-card.honor .cup { font-size: 26px; line-height: 1; }
+.sc-trophy { color: var(--sc-accent2); font-weight: 600; }
+
+/* 成员 */
+.sc-person { text-align: center; padding: 12px 8px; }
+.sc-avatar {
+  width: 46px; height: 46px; border-radius: 12px; margin: 0 auto 8px;
+  display: grid; place-items: center; font-size: 19px; font-weight: 600; color: var(--sc-text);
+}
+.sc-person .n { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-person .t { font-size: 11px; color: var(--sc-dim); margin-top: 3px; }
+
+/* 图集 */
+.sc-shot { position: relative; border-radius: var(--sc-radius); overflow: hidden; border: 1px solid var(--sc-line); background: var(--sc-card); cursor: zoom-in; }
+.sc-shot img { width: 100%; height: 132px; object-fit: cover; }
+/* 图片上的图注必须有对比度，这里保留一块不透明度的深色压边，不用渐变 */
+.sc-shot .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 8px 10px; font-size: 12px; background: rgba(23, 35, 61, .72); color: #fff; }
+
+/* 动态 */
+.sc-feed { display: flex; flex-direction: column; gap: 10px; }
+.sc-feed .it { background: var(--sc-card); border: 1px solid var(--sc-line); border-left: 3px solid var(--sc-accent); border-radius: 8px; padding: 12px 14px; box-shadow: var(--sc-shadow); }
+.sc-feed .it h4 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+.sc-feed .it p { margin: 0; font-size: 13px; color: var(--sc-sub); line-height: 1.7; white-space: pre-wrap; }
+.sc-feed .it .d { font-size: 11px; color: var(--sc-dim); margin-top: 8px; }
+
+/* 精选内容 */
+.sc-pick { background: var(--sc-card); border: 1px solid var(--sc-line); border-radius: var(--sc-radius); padding: 14px; box-shadow: var(--sc-shadow); }
+.sc-pick .tag { font-size: 11px; color: var(--sc-accent-text); letter-spacing: 1px; }
+.sc-pick h4 { margin: 4px 0 8px; font-size: 15px; font-weight: 600; }
+.sc-pick .code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; background: #f7f8fa; border: 1px dashed var(--sc-line-strong); border-radius: 6px; padding: 8px 10px; color: var(--sc-sub); word-break: break-all; }
+.sc-pick p { margin: 0; font-size: 13px; color: var(--sc-dim); line-height: 1.7; }
+
+/* 样本太小（只有 1-2 人上传的均值、只打过 1-2 场）不配大数字：降到一行小字，读者自己掂量 */
+.sc-stats.soft { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 6px 18px; margin-top: 10px; }
+.sc-stats.soft .sc-stat { background: none; border: 0; border-left: 2px solid var(--sc-line-strong); border-radius: 0; padding: 1px 0 1px 10px; }
+.sc-stats.soft .sc-stat b { display: inline; font-size: 14px; }
+.sc-stats.soft .sc-stat span { display: inline; margin-left: 6px; font-size: 12px; }
+
+/* 空状态 */
+.sc-empty { border: 1px dashed var(--sc-line-strong); border-radius: var(--sc-radius); padding: 26px 14px; text-align: center; color: var(--sc-dim); font-size: 13px; background: var(--sc-card); }
+
+/* ---------- 表单（投稿 / 入队意向） ---------- */
+.sc-forms { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.sc-form { background: var(--sc-card); border: 1px solid var(--sc-line); border-radius: var(--sc-radius); padding: 18px; box-shadow: var(--sc-shadow); }
+.sc-form h3 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
+.sc-form .hint { margin: 0 0 14px; font-size: 12px; color: var(--sc-dim); line-height: 1.6; }
+.sc-field { margin-bottom: 12px; }
+.sc-field label { display: block; font-size: 12px; color: var(--sc-sub); margin-bottom: 5px; font-weight: 500; }
+.sc-field input, .sc-field select, .sc-field textarea {
+  width: 100%; padding: 10px 12px; font-size: 14px;
+  background: #fff; color: var(--sc-text);
+  border: 1px solid var(--sc-line-strong); border-radius: 6px;
+  font-family: inherit;
+}
+.sc-field input::placeholder, .sc-field textarea::placeholder { color: var(--sc-off); }
+.sc-field textarea { min-height: 92px; resize: vertical; }
+.sc-field input:focus, .sc-field select:focus, .sc-field textarea:focus {
+  outline: none; border-color: var(--sc-accent);
+  box-shadow: 0 0 0 2px rgba(var(--sc-accent-rgb), .16);
+}
+.sc-caprow { display: flex; gap: 10px; align-items: center; }
+.sc-caprow img { width: 140px; height: 44px; border-radius: 6px; border: 1px solid var(--sc-line-strong); cursor: pointer; background: #fff; }
+.sc-caprow input { flex: 1 1 auto; }
+/* honeypot：真人看不见，脚本会填；不用 display:none 以免被某些填表器跳过 */
+.sc-fp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.sc-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 18px; border-radius: 6px; border: 1px solid transparent;
+  font-size: 14px; font-weight: 500; cursor: pointer; min-height: 40px;
+  background: var(--sc-solid); color: var(--sc-solid-ink);
+  transition: background .15s, border-color .15s, color .15s;
+}
+.sc-btn:hover:not(:disabled) { background: var(--sc-solid-dark); }
+.sc-btn.ghost { background: #fff; border-color: var(--sc-line-strong); color: var(--sc-sub); font-weight: 500; }
+.sc-btn.ghost:hover:not(:disabled) { background: var(--sc-accent-soft); border-color: var(--sc-accent); color: var(--sc-accent-text); }
+.sc-btn:disabled { background: var(--sc-btn-off); color: var(--sc-solid-ink); cursor: not-allowed; }
+.sc-msg { margin-top: 10px; font-size: 13px; min-height: 18px; }
+.sc-msg.err { color: var(--sc-bad); }
+.sc-msg.ok { color: var(--sc-good); }
+.sc-contact { font-size: 13px; color: var(--sc-dim); }
+.sc-contact b { color: var(--sc-text); font-weight: 600; }
+
+/* 实心队色带上的这三样要在色上活下来：队徽与 chip 改白底，字用站内那套深档 */
+.sc-band .sc-chip { background: #fff; border-color: #fff; }
+.sc-band .sc-chip.live { color: var(--sc-good); background: #fff; border-color: #fff; }
+.sc-band .sc-chip.closed { color: var(--sc-dim); }
+
+/* ---------- 桌面双栏：队长可以把任意块挪到左栏或右栏（v5.29.0） ----------
+   栏位挂在栏容器上而不是 section 上，两栏各自排自己那一串，
+   谁高谁矮互不牵连（以前 section 直接躺在 grid 里，左右两块会被同一行拽出空洞）。 */
+.sc-cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 0 24px; align-items: start; }
+.sc-col { min-width: 0; }
+/* 一块都没留在左栏时，右栏仍得是那条 300px 的窄栏，不然它会占满整行 */
+.sc-cols.only-side > .sc-col.side { grid-column: 2; }
+/* 右栏只有 300px：进去的块一律降密度。只在桌面生效——手机上两栏摊平成整幅，
+   再按栏位给不同列数就是自己给自己造 560 断点里的特例（以前那份就是这么埋的）。 */
+@media (min-width: 1025px) {
+  .sc-col.side .sc-grid.honor, .sc-col.side .sc-grid.pos { grid-template-columns: 1fr; }
+  .sc-col.side .sc-grid.people, .sc-col.side .sc-grid.gal { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sc-col.side .sc-card.honor { display: flex; flex-wrap: wrap; gap: 2px 10px; text-align: left; padding: 13px 14px; }
+  .sc-col.side .sc-card.honor .cup { font-size: 22px; }
+  .sc-col.side .sc-card.honor .k { flex: 1 1 120px; margin: 0; }
+  .sc-col.side .sc-card.honor img { width: 100%; height: 112px; }
+}
+/* 图集首图占两格，别一整面墙全是同尺寸小方块；右栏只有两列，占两格就顶满了 */
+@media (min-width: 901px) {
+  .sc-col:not(.side) .sc-grid.gal > .sc-shot:first-child { grid-column: span 2; }
+  .sc-col:not(.side) .sc-grid.gal > .sc-shot:first-child img { height: 206px; }
+}
+
+/* ---------- 大厅 ---------- */
+.sc-hero.hall .sc-inner { padding: 22px 20px; }
+.sc-search { display: flex; gap: 10px; margin-top: 16px; }
+.sc-search input { flex: 1 1 auto; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--sc-line-strong); background: #fff; color: var(--sc-text); font-size: 14px; }
+.sc-search input:focus { outline: none; border-color: var(--sc-accent); box-shadow: 0 0 0 2px rgba(var(--sc-accent-rgb), .16); }
+.sc-filter { display: flex; align-items: center; gap: 14px; margin: 18px 0 12px; font-size: 13px; color: var(--sc-dim); flex-wrap: wrap; }
+.sc-filter label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.sc-grid.team { grid-template-columns: repeat(4, 1fr); }
+.sc-tcard { display: flex; flex-direction: column; gap: 10px; padding: 16px; transition: border-color .16s ease, box-shadow .16s ease; }
+.sc-tcard:hover { border-color: var(--sc-accent); box-shadow: 0 2px 8px rgba(23, 35, 61, .08); }
+.sc-tcard .top { display: flex; align-items: center; gap: 10px; }
+.sc-tcard .top .nm { font-size: 15px; font-weight: 600; }
+.sc-tcard .sl { font-size: 12px; color: var(--sc-dim); height: 34px; overflow: hidden; }
+.sc-tcard .ln { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--sc-dim); }
+.sc-tcard .acts { display: flex; gap: 8px; margin-top: 2px; }
+.sc-tcard .acts .sc-btn { flex: 1 1 auto; padding: 9px 10px; font-size: 13px; }
+.sc-focus { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.sc-focus .sc-tcard { background: var(--sc-card2); border-color: rgba(176, 106, 31, .42); }
+
+/* ---------- 页脚 ---------- */
+.sc-foot { margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--sc-line); font-size: 12px; color: var(--sc-dim); line-height: 1.9; }
+.sc-foot a { color: var(--sc-accent-text); display: inline-block; padding: 4px 2px; } /* 行内文字链接：12px 字号的点区只有 16px 高，补内边距才够指头点 */
+
+/* ---------- 灯箱（看图时本来就是暗场，这里保持深色遮罩） ---------- */
+.sc-lb { position: fixed; inset: 0; background: rgba(23, 35, 61, .9); display: none; place-items: center; z-index: 60; padding: 20px; }
+.sc-lb.on { display: grid; }
+.sc-lb img { max-width: 96vw; max-height: 88vh; border-radius: 8px; box-shadow: 0 8px 30px rgba(0, 0, 0, .25); }
+.sc-lb .x { position: absolute; top: 16px; right: 20px; font-size: 26px; color: #fff; cursor: pointer; }
+
+/* ---------- 移动端常驻申请按钮 ---------- */
+.sc-cta { display: none; }
+
+@media (max-width: 1024px) {
+  /* 摊平成一条：栏容器不产生盒子，section 上那个 order 接管次序，手机上看到的就是队长排的那条顺序，
+     跟桌面把它放哪一栏无关。align-items 要拉回 stretch——桌面那句 start 是不让两栏里同排的两块被拽成
+     等高，摊平时留着它，每个 section 会缩成自己内容的宽（320 实测：图集只剩 152px） */
+  .sc-cols { display: flex; flex-direction: column; align-items: stretch; }
+  .sc-cols > .sc-col { display: contents; }
+}
+
+@media (max-width: 900px) {
+  .sc-grid.pos, .sc-grid.honor, .sc-grid.gal, .sc-grid.team, .sc-focus { grid-template-columns: repeat(2, 1fr); }
+  .sc-hero .sc-banner { height: 190px; }
+  .sc-grid.people { grid-template-columns: repeat(3, 1fr); }
+  .sc-forms { grid-template-columns: 1fr; }
+  .sc-stats { grid-template-columns: repeat(var(--sc-m, 2), minmax(0, 1fr)); }
+}
+
+@media (max-width: 560px) {
+  .sc-wrap { padding: 0 12px 88px; }
+  .sc-nav { padding: 8px 12px; }
+  .sc-team-name { font-size: 20px; }
+  .sc-badge-logo { width: 56px; height: 56px; border-radius: 12px; font-size: 24px; }
+  .sc-grid.pos, .sc-grid.honor, .sc-grid.gal, .sc-grid.team, .sc-focus { grid-template-columns: 1fr; }
+  .sc-grid.people { grid-template-columns: repeat(2, 1fr); }
+  .sc-hero .sc-banner { height: 150px; }
+  .sc-band { padding: 13px 14px; gap: 10px; }
+  .sc-band .sc-badge-logo { width: 46px; height: 46px; font-size: 20px; }
+  .sc-hero .sc-inner { padding: 16px 14px 18px; }
+  /* 底部常驻那颗已经做过同一件事了，顶栏再放一次只是挡视线 */
+  .sc-nav .sc-btn-sm { display: none; }
+  /* 委托文档要求：移动端【申请加入】底部常驻 */
+  .sc-cta {
+    display: block; position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 40;
+    padding: 13px; border-radius: 8px; text-align: center; font-weight: 600; font-size: 15px;
+    background: var(--sc-solid); color: var(--sc-solid-ink);
+    box-shadow: 0 2px 10px rgba(23, 35, 61, .22);
+  }
+  .sc-cta.ghost { background: var(--sc-card); color: var(--sc-accent-text); border: 1px solid var(--sc-line-strong); }
+  /* 触屏：输入框字号不足 16px 时 iOS 聚焦会强行放大整页；点击目标按 44px 起算 */
+  .sc-field input, .sc-field select, .sc-field textarea, .sc-search input { font-size: 16px; }
+  .sc-field input, .sc-field select { min-height: 44px; }
+  .sc-btn { min-height: 44px; }
+  .sc-filter { font-size: 15px; }
+  .sc-filter label { padding: 10px 0; }
+  /* 顶栏返回/入驻与页脚那几条是纯文字链接：17px 高的点区在手指底下等于没给 */
+  .sc-nav { flex-wrap: wrap; row-gap: 6px; }
+  /* .sc-nav .sc-back 的特权级比 .sc-nav a 高，只改后者会白改：这里两档都要抬到 44 */
+  .sc-nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px; }
+  .sc-nav .sc-back { min-height: 44px; }
+  .sc-foot a { display: inline-flex; align-items: center; min-height: 44px; padding: 7px 6px; }
+  .sc-filter input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--sc-accent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-chip.live .dot { animation: none; }
+  .sc-tcard { transition: none; }
+}

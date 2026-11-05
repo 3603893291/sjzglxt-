@@ -12,8 +12,8 @@ server {
     root   "C:/work/game-team-system/public";   # Windows 路径示例，用正斜杠
     # root "/var/www/game-team-system/public";  # Linux 路径示例
 
-    # 根目录优先命中静态首页 index.html，其次才是 index.php
-    index  index.html index.php;
+    # v5.27.0：官网首页由 ThinkPHP 渲染（view/home.html），index.php 必须排在最前
+    index  index.php index.html;
 
     # 上传大小限制（与代码内 5MB 限制匹配，留一点余量）
     client_max_body_size 10m;

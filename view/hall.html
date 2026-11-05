@@ -1,0 +1,172 @@
+<?php
+/**
+ * 平台公示大厅（v5.20.0，访客可访问，仅根路径 /hall）
+ * 由 app\controller\Showcase::hall() 渲染，变量：$cards $totals $featured $board $q $head
+ *
+ * 这里是《UI 设计委托》里那张"大厅 → 详情页 → 申请表单"的第一层：
+ * 列表只放便宜字段（队名/口号/成员数/招募状态），要近 5 场与胜率请点进那一队的 /show；
+ * 卡片本身是链接，所以禁用 JS 也能浏览；「加载更多」「只看招募中」是纯前端过滤，不额外发请求。
+ */
+$e = function ($v) {
+    return htmlspecialchars((string)$v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+};
+$recruit = function ($c) { return (int)$c['recruiting'] === 1; };
+// 队色只写在这张卡片自己的 style 上：CSS 变量往下继承，卡里的队徽底与悬停描边就跟这支队自己的色走
+$accentVars = function ($c) use ($e) {
+    $a = $c['accent'] ?? [];
+    if ($a === []) {
+        return '';
+    }
+    return '--sc-accent:' . $e($a['main']) . ';--sc-solid:' . $e($a['solid']) . ';--sc-solid-ink:' . $e($a['ink']);
+};
+?>
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<?= $head ?: \app\service\SeoMeta::head('战队公示大厅') ?>
+<meta name="robots" content="index,follow">
+<link rel="stylesheet" href="<?= asset('/static/css/showcase.css') ?>">
+</head>
+<body>
+
+<nav class="sc-nav">
+  <span class="sc-mark">△</span>
+  <span class="sc-title">战队公示大厅</span>
+  <span class="sc-spacer"></span>
+  <a class="sc-back" href="/">返回入驻平台</a>
+  <a class="sc-btn ghost" href="/apply" style="padding:8px 14px;font-size:13px">战队入驻</a>
+</nav>
+
+<div class="sc-wrap">
+
+  <section class="sc-hero hall">
+    <div class="sc-inner">
+      <h1 class="sc-team-name" style="margin:0">找到你的队伍</h1>
+      <p class="sc-slogan">下面这些战队都通过了平台入驻审核，招募状态由各队自行维护。</p>
+      <div class="sc-stats">
+        <div class="sc-stat"><b><?= (int)$totals['teams'] ?></b><span>入驻战队</span></div>
+        <div class="sc-stat"><b><?= (int)$totals['members'] ?></b><span>平台总成员</span></div>
+        <div class="sc-stat"><b><?= (int)$totals['shown'] ?></b><span>已开主页</span></div>
+        <div class="sc-stat"><b><?= (int)$totals['battles'] ?></b><span>累计约战场次</span></div>
+      </div>
+      <form class="sc-search" method="get" action="/hall">
+        <input name="q" maxlength="30" value="<?= $e($q) ?>" placeholder="按战队名搜索，例如 三角洲">
+        <button class="sc-btn" type="submit">搜索</button>
+        <?php if ($q !== ''): ?><a class="sc-btn ghost" href="/hall">清空</a><?php endif; ?>
+      </form>
+    </div>
+  </section>
+
+  <?php if ($featured !== []): ?>
+  <section class="sc-sec">
+    <h2 class="sc-h2">焦点战队 <span class="sc-more">平台精选</span></h2>
+    <div class="sc-focus">
+      <?php foreach ($featured as $c): ?>
+        <?php $av = $accentVars($c); ?>
+        <a class="sc-card sc-tcard"<?= $av === '' ? '' : ' style="' . $av . '"' ?> href="/<?= $e($c['slug']) ?>/show">
+          <div class="top">
+            <span class="sc-badge-logo" style="width:44px;height:44px;border-radius:10px;font-size:18px">
+              <?php if ($c['logo'] !== ''): ?><img src="<?= $e($c['logo']) ?>" alt=""><?php else: ?><?= $e($c['word']) ?><?php endif; ?>
+            </span>
+            <span class="nm"><?= $e($c['name']) ?></span>
+          </div>
+          <div class="sl"><?= $e($c['slogan']) ?></div>
+          <div class="ln"><span>成员 <?= (int)$c['members'] ?></span><span><?= $recruit($c) ? '招募中' : '暂不招募' ?></span></div>
+        </a>
+      <?php endforeach; ?>
+    </div>
+  </section>
+  <?php endif; ?>
+
+  <section class="sc-sec">
+    <div class="sc-filter">
+      <label><input type="checkbox" id="scOnlyRecruit"> 只看招募中</label>
+      <span id="scCount">共 <?= count($cards) ?> 支战队</span>
+      <span class="sc-spacer" style="flex:1 1 auto"></span>
+      <span>排序：招募中优先，其次成员规模</span>
+    </div>
+
+    <?php if ($cards === []): ?>
+      <div class="sc-empty">
+        <?= $q !== '' ? '没有找到与「' . $e($q) . '」相关的战队。' : '还没有战队开启对外主页。' ?>
+        <?php if ($q !== ''): ?><br><a class="sc-btn ghost" style="margin-top:12px" href="/hall">清空搜索</a><?php endif; ?>
+      </div>
+    <?php else: ?>
+      <div class="sc-grid team" id="scGrid">
+        <?php foreach ($cards as $i => $c): ?>
+          <?php // 两段内联样式必须合进同一个 style 属性：同名属性写两遍浏览器只认第一个
+              $sty = array_values(array_filter([$accentVars($c), $i >= 12 ? 'display:none' : ''])); ?>
+          <div class="sc-card sc-tcard" data-recruit="<?= (int)$c['recruiting'] ?>" data-i="<?= (int)$i ?>"<?= $sty === [] ? '' : ' style="' . implode(';', $sty) . '"' ?>>
+            <div class="top">
+              <span class="sc-badge-logo" style="width:44px;height:44px;border-radius:10px;font-size:18px">
+                <?php if ($c['logo'] !== ''): ?><img src="<?= $e($c['logo']) ?>" alt=""><?php else: ?><?= $e($c['word']) ?><?php endif; ?>
+              </span>
+              <span class="nm"><?= $e($c['name']) ?></span>
+              <span class="sc-spacer" style="flex:1 1 auto"></span>
+              <span class="sc-chip <?= $recruit($c) ? 'live' : 'closed' ?>"><?= $recruit($c) ? '<span class="dot"></span>招募中' : '暂不招募' ?></span>
+            </div>
+            <div class="sl"><?= $e($c['slogan']) ?></div>
+            <div class="ln"><span>成员 <?= (int)$c['members'] ?></span><span><?= $c['positions'] > 0 ? '在招 ' . (int)$c['positions'] . ' 个岗位' : '未挂岗位' ?></span></div>
+            <div class="acts">
+              <a class="sc-btn ghost" href="/<?= $e($c['slug']) ?>/show">查看战队</a>
+              <a class="sc-btn" href="/<?= $e($c['slug']) ?>/show#sc-apply">申请加入</a>
+            </div>
+          </div>
+        <?php endforeach; ?>
+      </div>
+      <?php if (count($cards) > 12): ?>
+        <div style="text-align:center;margin-top:18px">
+          <button class="sc-btn ghost" id="scMore" type="button">加载更多（还剩 <?= count($cards) - 12 ?> 支）</button>
+        </div>
+      <?php endif; ?>
+    <?php endif; ?>
+  </section>
+
+  <?php if ($board !== []): ?>
+  <section class="sc-sec">
+    <h2 class="sc-h2">约战胜场榜 <span class="sc-more">按已完赛约战统计</span></h2>
+    <div class="sc-card" style="padding:6px 14px">
+      <?php foreach ($board as $i => $r): ?>
+        <div class="ln" style="padding:10px 0;border-bottom:<?= $i + 1 === count($board) ? 'none' : '1px solid var(--sc-line)' ?>">
+          <span><b style="color:var(--sc-accent2)"><?= $i + 1 ?></b>&nbsp; <?= $e($r['name']) ?></span>
+          <span><span class="sc-trophy"><?= (int)$r['wins'] ?></span> 胜</span>
+        </div>
+      <?php endforeach; ?>
+    </div>
+  </section>
+  <?php endif; ?>
+
+  <footer class="sc-foot">
+    所有战队均经平台入驻审核；主页内容（口号、图集、招募岗位、投稿采纳）由各自战队维护。<br>
+    <a href="/">平台首页</a> &nbsp;·&nbsp; <a href="/apply">申请入驻</a> &nbsp;·&nbsp; <a href="/terms">服务条款</a> &nbsp;·&nbsp; <a href="/privacy">隐私政策</a>
+  </footer>
+</div>
+
+<script>
+(function () {
+  var grid = document.getElementById('scGrid');
+  if (!grid) return;
+  var cards = Array.prototype.slice.call(grid.children);
+  var shown = 12, step = 12, only = false;
+  var btn = document.getElementById('scMore');
+  var chk = document.getElementById('scOnlyRecruit');
+  var cnt = document.getElementById('scCount');
+
+  function apply() {
+    var vis = cards.filter(function (c) { return !only || c.getAttribute('data-recruit') === '1'; });
+    cards.forEach(function (c) { c.style.display = 'none'; });
+    vis.slice(0, shown).forEach(function (c) { c.style.display = ''; });
+    if (cnt) cnt.textContent = '共 ' + vis.length + ' 支战队' + (only ? '（招募中）' : '');
+    if (btn) {
+      if (vis.length <= shown) { btn.style.display = 'none'; }
+      else { btn.style.display = ''; btn.textContent = '加载更多（还剩 ' + (vis.length - shown) + ' 支）'; }
+    }
+  }
+  if (btn) btn.addEventListener('click', function () { shown += step; apply(); });
+  if (chk) chk.addEventListener('change', function () { only = chk.checked; shown = step; apply(); });
+})();
+</script>
+</body>
+</html>

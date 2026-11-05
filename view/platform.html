@@ -3,23 +3,31 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>战队入驻平台</title>
+  <?= \app\service\SeoMeta::head(
+        ($mode ?? 'app') === 'login' ? '平台登录' : (($mode ?? 'app') === 'register' ? '战队入驻申请' : '平台控制台')
+      ) ?>
   <style>
     html, body { margin: 0; padding: 0; }
     body { background: #f5f5f7; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
     #boot { display: flex; align-items: center; justify-content: center; height: 100vh; color: #86868b; font-size: 14px; }
+    /* v5.10.0：Cookie 同意横幅样式（React 挂载前也需要保底可读） */
+    #cookie-consent-root { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9999; }
   </style>
 </head>
 <body>
   <div id="root"><div id="boot">页面加载中...</div></div>
+  <div id="cookie-consent-root"></div>
 
   <script>window.PLATFORM_MODE = '<?= isset($mode) ? htmlspecialchars($mode, ENT_QUOTES, "UTF-8") : 'app' ?>';</script>
+  <script>window.SITE_BASE = '';</script>
   <script src="<?= asset('/static/vendor/react.production.min.js') ?>"></script>
   <script src="<?= asset('/static/vendor/react-dom.production.min.js') ?>"></script>
   <script src="<?= asset('/static/vendor/emotion-react.umd.min.js') ?>"></script>
   <script src="<?= asset('/static/vendor/emotion-styled.umd.min.js') ?>"></script>
   <script src="<?= asset('/static/vendor/material-ui.production.min.js') ?>"></script>
-  <script src="<?= asset('/static/vendor/babel.min.js') ?>"></script>
-  <script type="text/babel" data-presets="react" src="<?= asset('/static/js/platform.jsx') ?>"></script>
+  <!-- v5.33.0：下面这些 js 是发布时用 node scripts/build_js.js 预编译出来的，改了 .jsx 一定要重新编译并核对（--check），浏览器里不再跑 Babel -->
+  <script src="<?= asset('/static/js/cookie-consent.js') ?>"></script>
+  <script src="<?= asset('/static/js/compliance-admin.js') ?>"></script>
+  <script src="<?= asset('/static/js/platform.js') ?>"></script>
 </body>
 </html>

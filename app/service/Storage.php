@@ -23,6 +23,8 @@ class Storage
             'profiles'      => ['users', 'profile_image', '注册审核截图'],
             'guides'        => ['guides', 'image', '攻略封面'],
             'announcements' => ['announcements', 'image', '公告配图'],
+            // v5.20.0：对外展示页的队徽/Banner/图集/荣誉配图（一条记录一张图，删记录即删文件）
+            'showcase'      => ['showcase_items', 'image', '对外展示页图片'],
         ];
     }
 
@@ -240,6 +242,9 @@ class Storage
         }
         if ($type === 'images') {
             Db::name('images')->where('id', $id)->delete();   // 图片记录整体删除
+        } elseif ($type === 'showcase') {
+            // 展示页条目本身就等于一张图，只清引用会留下一条永远上不了页的空壳
+            Db::name('showcase_items')->where('id', $id)->delete();
         } else {
             Db::name($table)->where('id', $id)->update([$col => '']);   // 其余只清文件引用
         }

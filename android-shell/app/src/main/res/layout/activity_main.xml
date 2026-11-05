@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The WebView itself is padded by window insets in MainActivity; this root only
+     supplies the colour that shows through that padding. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/shell_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/chrome">
+
+    <WebView
+        android:id="@+id/web"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+</FrameLayout>

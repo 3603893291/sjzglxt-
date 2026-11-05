@@ -2,7 +2,7 @@
   Options +FollowSymlinks -Multiviews
   RewriteEngine On
 
-  # 根目录优先使用静态首页 index.html
+  # v5.27.0：官网首页改由 ThinkPHP 渲染（view/home.html），这里没有静态 index.html 了
   # 当存在真实的文件/目录时，直接服务；否则才交给 ThinkPHP
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteCond %{REQUEST_FILENAME} !-f

@@ -6,6 +6,15 @@ namespace app\service;
 /**
  * 零依赖 SMTP 发信客户端（支持 465 SSL 与 587 STARTTLS）
  * 配置来自 settings 表：smtp_host / smtp_port / smtp_user / smtp_pass / smtp_from
+ *
+ * v5.31.0 起这套客户端两种用法：
+ *   · 战队自己发信 —— 读本站那五个 smtp_*（Setting::get，作用域=当前租户）
+ *   · 平台邮件群发 —— 读平台自己的 p_mail_*（platformConfig()，作用域=租户 0），
+ *     整组作为 $override 传进 send()，战队那套 smtp_* 在这里一律不生效；
+ *     反过来，平台这套凭据也只有平台超管的接口读得到，战队侧碰不到。
+ * 正文格式按 looksLikeHtml() 保守判定：判成 HTML 才用 text/html，否则一律 text/plain。
+ * 加密方式：没显式给 smtp_secure 时沿用老规矩（465=SSL，其它端口=STARTTLS）；
+ * 平台那一套可以多选一种 none（本机中继/自测用），战队那套读不到这个键，行为一字不变。
  */
 class Mailer
 {
@@ -28,6 +37,57 @@ class Mailer
         return Setting::get('smtp_host') !== ''
             && Setting::get('smtp_user') !== ''
             && Setting::get('smtp_pass') !== '';
+    }
+
+    /**
+     * 平台自己那一套发信账号：settings 里 p_mail_* 那几个键（租户号 0）。
+     * 返回的就是 send() 的 $override，键名沿用 smtp_* —— Mailer 内部只认这一套键，
+     * 换作用域这件事只发生在「从哪儿读」，不发生在「怎么发」，两条链路共用一份发送实现。
+     *
+     * @return array{smtp_host:string,smtp_port:string,smtp_user:string,smtp_pass:string,smtp_from:string}
+     */
+    public static function platformConfig(): array
+    {
+        return [
+            'smtp_host' => trim(Setting::getPlatform('p_mail_host')),
+            'smtp_port' => trim(Setting::getPlatform('p_mail_port', '465')),
+            'smtp_user' => trim(Setting::getPlatform('p_mail_user')),
+            // 已保存的授权码可能当初就是带着空格粘进去的，读出来再清洗一次做双保险
+            'smtp_pass' => self::normalizeSecret(Setting::getPlatform('p_mail_pass')),
+            'smtp_from' => trim(Setting::getPlatform('p_mail_from')),
+            // 这一项不是 settings 里那五个 smtp_* 之一，只有平台这一路会读到它
+            'smtp_secure' => strtolower(trim(Setting::getPlatform('p_mail_secure'))),
+        ];
+    }
+
+    /** 平台这套配齐了没有：服务器 / 账号 / 授权码三项缺一个都不能发 */
+    public static function platformConfigured(): bool
+    {
+        $c = self::platformConfig();
+        return $c['smtp_host'] !== '' && $c['smtp_user'] !== '' && $c['smtp_pass'] !== '';
+    }
+
+    /**
+     * 这封正文要不要按 HTML 发 —— 保守判定。
+     *
+     * 需求方选的是「混着来，自动判」，而两个判错方向里只有一个是真会毁掉这封信的：
+     *   纯文本判成 HTML ⇒ 换行全塌成一行、半截标签把整篇变成一坨，收件人看到的是乱码；
+     *   HTML 判成纯文本 ⇒ 只是在邮件里看到几个尖括号，字一个不丢。
+     * 所以这里只认「整篇看起来就是一封 HTML 邮件」：要么有 html/body/doctype，
+     * 要么块级标签成对出现且数量够多（≥4 个开、≥3 个闭）。
+     * 只写了 <b>加粗</b> 这种一句话带过的小标签、或者标签写到一半没闭合的，一律按纯文本发。
+     */
+    public static function looksLikeHtml(string $body): bool
+    {
+        if ($body === '') {
+            return false;
+        }
+        if (preg_match('/<\s*(html|body)\b/i', $body) || stripos($body, '<!doctype') !== false) {
+            return true;
+        }
+        $opens  = preg_match_all('/<\s*(p|div|br|li|ul|ol|table|tr|td|th|h[1-6])\b[^>]*\/?\s*>/i', $body, $m1);
+        $closes = preg_match_all('/<\s*\/\s*(p|div|li|ul|ol|table|tr|td|th|h[1-6])\s*>/i', $body, $m2);
+        return $opens >= 4 && $closes >= 3;
     }
 
     /**
@@ -159,16 +219,17 @@ class Mailer
 
     /**
      * 发送邮件（对外入口，保证返回文本编码安全）
-     * @param array $override 临时配置（用于"未保存即测试"），键同 settings
+     * @param array $override 临时配置（用于"未保存即测试"、以及平台那套 p_mail_*），键同 settings
+     * @param bool  $html     true=按 text/html 发；假则按 text/plain 原样发（正文一律 base64，不会被内容里的词打断）
      * @return string|null 成功返回 null，失败返回错误信息
      */
-    public static function send(string $to, string $subject, string $body, array $override = []): ?string
+    public static function send(string $to, string $subject, string $body, array $override = [], bool $html = false): ?string
     {
-        $err = self::doSend($to, $subject, $body, $override);
+        $err = self::doSend($to, $subject, $body, $override, $html);
         return $err === null ? null : self::safeText($err);
     }
 
-    protected static function doSend(string $to, string $subject, string $body, array $override = []): ?string
+    protected static function doSend(string $to, string $subject, string $body, array $override = [], bool $html = false): ?string
     {
         $pick = function (string $key, string $default = '') use ($override) {
             if (isset($override[$key]) && $override[$key] !== '') {
@@ -201,7 +262,12 @@ class Mailer
             $port = 465;
         }
 
-        $ssl    = ($port === 465);
+        // 加密方式：显式给了就照给的走，没给才按端口猜（战队那套永远走这一句的默认分支）
+        $secure = strtolower(trim((string)($override['smtp_secure'] ?? '')));
+        if ($secure !== 'ssl' && $secure !== 'tls' && $secure !== 'none') {
+            $secure = ($port === 465) ? 'ssl' : 'tls';
+        }
+        $ssl    = ($secure === 'ssl');
         $errno  = 0;
         $errstr = '';
 
@@ -250,8 +316,8 @@ class Mailer
         if ($err = $cmd($fp, $read, null, 220)) return 'SMTP 握手失败: ' . $err;
         if ($err = $cmd($fp, $read, 'EHLO localhost', 250)) return 'EHLO 失败: ' . $err;
 
-        // STARTTLS（587 等非 465 端口）
-        if (!$ssl) {
+        // STARTTLS（587 这类端口；显式选了 none 就什么都不加，本机中继与自测走这一路）
+        if (!$ssl && $secure === 'tls') {
             if ($err = $cmd($fp, $read, 'STARTTLS', 220)) return 'STARTTLS 失败: ' . $err;
             stream_context_set_option($fp, 'ssl', 'verify_peer', false);
             stream_context_set_option($fp, 'ssl', 'verify_peer_name', false);
@@ -294,7 +360,7 @@ class Mailer
         }
         $headers = array_merge($headers, [
             'MIME-Version: 1.0',
-            'Content-Type: text/plain; charset=utf-8',
+            'Content-Type: ' . ($html ? 'text/html' : 'text/plain') . '; charset=utf-8',
             'Content-Transfer-Encoding: base64',
             'Date: ' . date('r'),
         ]);

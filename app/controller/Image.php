@@ -115,7 +115,11 @@ class Image extends AuthBase
         // 仅 approved 的图片公开；pending/rejected 仅本人或管理员可看
         if ($image->status !== 'approved') {
             $me = current_user();
-            if (!$me || ($me->id != $image->user_id && !is_admin())) {
+            // v5.15.0(S-L3)：待审/驳回截图属于他人上传内容，管理员侧沿用既有口径
+            // （screenshots=「用户上传截图可查看」，image_review=图片审核），
+            // 零权限的挂名管理员不再能看到别人没通过审核的截图
+            $canSee = admin_can('screenshots') || admin_can('image_review');
+            if (!$me || ($me->id != $image->user_id && !$canSee)) {
                 return response('', 403);
             }
         }
@@ -133,6 +137,22 @@ class Image extends AuthBase
         $ext  = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
         $mimes = ['jpg'=>'image/jpeg','jpeg'=>'image/jpeg','png'=>'image/png','gif'=>'image/gif','webp'=>'image/webp'];
         $mime = $mimes[$ext] ?? 'application/octet-stream';
+
+        // v5.10.0：?thumb=1 开启查看时压缩（列表缩略图场景），不改动磁盘文件
+        // 默认不开：详情页直接读原文件，避免重复编码开销
+        if ($this->request->get('thumb') === '1' && \app\service\Setting::getPlatform('image_compress_enabled', '1') === '1') {
+            $maxW = max(320, min(2560, (int)$this->request->get('w', 1280)));
+            $q    = max(40, min(95, (int)$this->request->get('q', 78)));
+            $view = \app\service\ImageCompressor::compressForView($abs, $maxW, $q);
+            if ($view !== null) {
+                return response($view['body'])->header([
+                    'Content-Type'  => $view['mime'],
+                    'Cache-Control' => 'public, max-age=86400',   // 缩略图缓存 1 天
+                    'X-Content-Type-Options' => 'nosniff',
+                    'Vary'          => 'Accept',
+                ]);
+            }
+        }
 
         // 二进制 MIME 不带 charset（contentType() 会强拼 charset=utf-8，改用 header 直设）
         return response(file_get_contents($abs))->header([

@@ -2,7 +2,7 @@
 
 namespace app\controller;
 
-use app\model\User;
+use think\facade\Db;
 use think\Response;
 
 /**
@@ -13,6 +13,10 @@ use think\Response;
  * 隐私与头像展示两不误。
  *
  * v5.7.1(M5)：改挂 AuthBase（控制器级 AuthCheck），不再仅依赖路由组中间件。
+ *
+ * v5.22.0：查人改用 Db::name()（不带 tenant_id 全局作用域）——
+ *   跨队私聊与个人主页是公共区，A 队成员要能看到 B 队对方的头像；
+ *   原来走 User 模型会在他队的上下文里查不到人，只能回落到首字色块。
  */
 class Avatar extends AuthBase
 {
@@ -28,10 +32,12 @@ class Avatar extends AuthBase
     public function show($uid)
     {
         $uid  = (int)$uid;
-        $user = $uid > 0 ? User::find($uid) : null;
+        $user = $uid > 0 ? Db::name('users')->where('id', $uid)->find() : null;
 
-        $qq = ($user && preg_match('/^\d{5,11}$/', (string)$user->username))
-            ? (string)$user->username
+        // 不在场的账号（待审核/已封/已注销）不向 qlogo 取图，直接走回落
+        $alive = $user && (string)($user['status'] ?? '') === 'approved';
+        $qq    = ($alive && preg_match('/^\d{5,11}$/', (string)($user['username'] ?? '')))
+            ? (string)$user['username']
             : '';
 
         if ($qq !== '') {
@@ -60,7 +66,8 @@ class Avatar extends AuthBase
         }
 
         // 回退：按 uid 生成首字母 SVG 头像（管理员 / 拉取失败 / 用户不存在）
-        $nick = $user ? (string)($user->nickname ?: $user->username) : '?';
+        // 没昵称的人不能拿账号当昵称取首字：那是 QQ 的第一位数字，色块上就等于挂着半个 QQ 号
+        $nick = ($user && trim((string)($user['nickname'] ?? '')) !== '') ? (string)$user['nickname'] : '?';
         return $this->output($this->letterSvg($nick, $uid), 'image/svg+xml');
     }
 

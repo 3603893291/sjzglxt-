@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace app\controller;
 
+use app\service\BattleNotice;
 use app\service\BattleService;
 use app\service\Setting;
 use app\service\TenantContext;
@@ -59,6 +60,53 @@ class BattleAdmin extends AuthBase
             'list'    => BattleService::withMySide(BattleService::listForParty('tenant', $tid), 'tenant', $tid),
             'parties' => $parties,
         ]);
+    }
+
+    /**
+     * 待本队同意的约战（v5.13.0：管理员进站的强制弹窗数据源）
+     * 只取「本队是被约战方(b) 且仍 pending」的单子；不建表也不记已读——
+     * 弹窗由约战真实状态驱动，管理员同意或拒绝后自然消失，普通成员看不到。
+     */
+    public function pending()
+    {
+        if ($r = $this->guard()) return $r;
+        BattleService::expireLazy();
+        $list = [];
+        $rows = Db::name('battles')->where('status', 'pending')
+            ->where('defender_type', 'tenant')->where('defender_id', $this->tenantId())
+            ->order('id', 'desc')->limit(10)->select()->toArray();
+        foreach ($rows as $b) {
+            $list[] = [
+                'id'            => (int)$b['id'],
+                'title'         => (string)$b['title'],
+                'game_mode'     => (string)$b['game_mode'],
+                'battle_time'   => (string)$b['battle_time'],
+                'series_format' => (string)$b['series_format'],
+                'battle_type'   => (string)($b['battle_type'] ?? 'official'),
+                'roster_limit'  => (int)$b['roster_limit'],
+                'challenger'    => BattleService::partyName((string)$b['challenger_type'], (int)$b['challenger_id']),
+                'created_at'    => (string)$b['created_at'],
+            ];
+        }
+        return api_ok(['list' => $list]);
+    }
+
+    /** 本队「约战成立自动公告」开关状态（默认开） */
+    public function noticeConfig()
+    {
+        if ($r = $this->guard()) return $r;
+        return api_ok(['enabled' => BattleNotice::enabledFor($this->tenantId())]);
+    }
+
+    /** 保存开关（关闭后成立不再自动发公告，管理员仍可自行发公告） */
+    public function noticeSave()
+    {
+        if ($r = $this->guard()) return $r;
+        $on = $this->request->post('enabled') ? 1 : 0;
+        Setting::set(BattleNotice::SWITCH_KEY, $on ? '1' : '0');
+        admin_log('约战管理', $on ? '开启约战成立自动公告' : '关闭约战成立自动公告');
+        return api_ok(['enabled' => (bool)$on],
+            $on ? '约战成立后将自动向本队发公告' : '已关闭约战成立自动公告');
     }
 
     /** 发起约战（对方：平台租户或外部战队） */
@@ -175,6 +223,11 @@ class BattleAdmin extends AuthBase
 
         $removeId = (int)$this->request->post('remove_id', 0);
         if ($removeId > 0) {
+            // v5.15.0(S-H1)：removeSignup 只按 (id, battle_id) 删，而 detail() 把双方条目
+            // 的 id 一并回给参赛方 —— 少这一层 side 校验，发起方就能拿对方条目 id 精准删人。
+            // 开放接口侧 OpenBattle::roster 早有同样的判断，session 通道此前漏了。
+            $row = Db::name('battle_signups')->where('id', $removeId)->where('battle_id', (int)$id)->find();
+            if (!$row || $row['side'] !== $side) return api_err('只能移除本方的名单条目', 403, 403);
             if ($e = BattleService::removeSignup((int)$id, $removeId)) return api_err($e);
             return api_ok([], '已从名单移除');
         }
@@ -333,6 +386,12 @@ class BattleAdmin extends AuthBase
         $key = trim((string)$this->request->post('key', ''));
         if ($enabled === '1' && ($url === '' || !preg_match('#^https?://#i', $url))) {
             return api_err('请填写约战中心地址（http/https 开头）');
+        }
+        // v5.15.0(S-M6)：这个地址随后由本站服务器直接发起请求，只校验前缀等于
+        // 给了站长一个探测宿主内网的跳板（127.0.0.1:6379 / 10.x / 169.254.x）
+        if ($enabled === '1') {
+            $bad = safe_outbound_url($url);
+            if ($bad !== null) return api_err('约战中心地址不可用：' . $bad);
         }
         Setting::set('battle_hub_enabled', $enabled);
         Setting::set('battle_hub_url', $url);

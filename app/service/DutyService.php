@@ -15,10 +15,27 @@ use app\model\User;
  */
 class DutyService
 {
-    /** 取房主值班配置（首期仅 room_host 一种） */
-    public static function config(): ?DutyConfig
+    /** 取房主值班配置（首期仅 room_host 一种）。
+     *  v5.36.0：值班这块开着分端时，先取当前专区的配置，没有就沿用全队共享那份；
+     *  没开分端时只看共享那份（老数据都在 game_side='' 上）。 */
+    public static function config(?string $zone = null): ?DutyConfig
     {
-        return DutyConfig::where('duty_type', 'room_host')->find();
+        if (!GameSide::moduleOn('duty')) {
+            $shared = DutyConfig::where('duty_type', 'room_host')->where('game_side', '')->find();
+            return $shared ?: DutyConfig::where('duty_type', 'room_host')->order('id', 'asc')->find();
+        }
+        $zone = $zone ?: GameSide::zone();
+        $exact = DutyConfig::where('duty_type', 'room_host')->where('game_side', $zone)->find();
+        if ($exact) {
+            return $exact;
+        }
+        return DutyConfig::where('duty_type', 'room_host')->where('game_side', '')->find();
+    }
+
+    /** 管理员页要动的那一份：只认当前专区那一份，没有就是 null（不拿共享的顶替，免得改错） */
+    public static function configExact(string $zone): ?DutyConfig
+    {
+        return DutyConfig::where('duty_type', 'room_host')->where('game_side', $zone)->find();
     }
 
     /**

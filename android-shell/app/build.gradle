@@ -1,0 +1,58 @@
+plugins {
+    id 'com.android.application'
+}
+
+def keystoreFile = rootProject.file('keystore.properties')
+def keystoreProps = new Properties()
+if (keystoreFile.exists()) {
+    keystoreFile.withInputStream { keystoreProps.load(it) }
+}
+
+android {
+    namespace 'com.zhandui.app'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.zhandui.app'
+        minSdk 26
+        targetSdk 36
+        versionCode 206
+        versionName '2.0.6'
+    }
+
+    signingConfigs {
+        if (keystoreFile.exists()) {
+            release {
+                storeFile rootProject.file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (keystoreFile.exists()) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    lint {
+        // assembleRelease would otherwise run lintVitalRelease, whose jars are not in
+        // the offline Gradle cache on this machine.
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}

@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<?= \app\service\SeoMeta::head(null, '一个战队一套自己的系统：成员职责、轮换地图、枪码库、战绩上传、跨队约战、实战演练、聊天室与私聊。现邀请战队入驻。') ?>
+<meta name="theme-color" content="#f7f8fc">
+<style>
+  :root {
+    --bg: #f7f8fc;
+    --surface: #ffffff;
+    --ink: #0a0f1e;
+    --ink-2: #273249;
+    --muted: #5f6b80;
+    --dim: #6b7689;
+    --line: #e4e8f1;
+    --line-2: #d7ddea;
+    --blue: #2563eb;
+    --violet: #7c3aed;
+    --cyan: #0891b2;
+    --orange: #ea580c;
+    --green: #16a34a;
+    --grad: linear-gradient(120deg, #2563eb 0%, #6d28d9 52%, #0891b2 100%);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    --radius: 20px;
+    --wrap: 1160px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.7;
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  ::selection { background: rgba(37, 99, 235, .18); color: var(--ink); }
+  a { color: var(--blue); text-decoration: none; }
+  img { max-width: 100%; }
+  .wrap { width: min(var(--wrap), calc(100% - 40px)); margin: 0 auto; }
+  .skip {
+    position: fixed; left: 16px; top: -60px; z-index: 100;
+    padding: 10px 16px; border-radius: 999px; background: var(--ink); color: #fff;
+    font-weight: 700; transition: top .2s;
+  }
+  .skip:focus { top: 16px; }
+
+  /* ---------- 背景 ---------- */
+  .bg { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: var(--bg); }
+  .bg::before {
+    content: ""; position: absolute; inset: 0;
+    background:
+      radial-gradient(900px 540px at 10% -10%, rgba(37, 99, 235, .14), transparent 62%),
+      radial-gradient(780px 520px at 94% 2%, rgba(124, 58, 237, .13), transparent 64%),
+      radial-gradient(900px 620px at 48% 108%, rgba(8, 145, 178, .09), transparent 66%);
+  }
+  .bg-dots {
+    position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(25, 40, 80, .13) 1px, transparent 1px);
+    background-size: 22px 22px;
+    mask-image: linear-gradient(180deg, rgba(0,0,0,.6), transparent 52%);
+    -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,.6), transparent 52%);
+    opacity: .55;
+  }
+  .bg-blob {
+    position: absolute; border-radius: 50%; filter: blur(30px); opacity: .55;
+    animation: drift 18s ease-in-out infinite alternate;
+  }
+  .b1 { width: 520px; height: 520px; left: -180px; top: -220px; background: radial-gradient(circle, rgba(37, 99, 235, .22), transparent 66%); }
+  .b2 { width: 480px; height: 480px; right: -160px; top: 90px; background: radial-gradient(circle, rgba(124, 58, 237, .18), transparent 68%); animation-delay: -6s; }
+  .b3 { width: 620px; height: 420px; left: 32%; bottom: -240px; background: radial-gradient(circle, rgba(8, 145, 178, .14), transparent 68%); animation-delay: -11s; }
+
+  .progress {
+    position: fixed; left: 0; top: 0; z-index: 60;
+    width: 100%; height: 2px; transform: scaleX(0); transform-origin: 0 50%;
+    background: var(--grad);
+  }
+
+  /* ---------- 导航 ---------- */
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(247, 248, 252, .8);
+    border-bottom: 1px solid rgba(228, 232, 241, .9);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+  }
+  .nav-in { display: flex; align-items: center; gap: 22px; height: 70px; }
+  .brand { display: flex; align-items: center; gap: 11px; color: var(--ink); flex: 0 0 auto; }
+  .logo {
+    width: 36px; height: 36px; border-radius: 11px; flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--grad);
+    box-shadow: 0 10px 24px -10px rgba(37, 99, 235, .7), inset 0 0 0 1px rgba(255,255,255,.35);
+  }
+  .logo svg { width: 20px; height: 20px; fill: #fff; }
+  .brand-text { display: flex; flex-direction: column; font-size: 15px; font-weight: 750; line-height: 1.2; letter-spacing: -.01em; }
+  .brand-text small { font: 9px var(--mono); color: var(--blue); letter-spacing: .18em; }
+  .links { display: flex; gap: 26px; margin-left: 18px; }
+  .links a { color: #4d586d; font-size: 14px; transition: color .18s; }
+  .links a:hover { color: var(--blue); }
+  .acts { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+  .sys {
+    display: inline-flex; align-items: center; gap: 7px; margin-right: 4px;
+    padding: 6px 11px; border-radius: 999px;
+    background: #edf8f1; border: 1px solid #d5eddd;
+    font: 10px var(--mono); letter-spacing: .1em; color: #1c7a49; white-space: nowrap;
+  }
+  .sys i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px rgba(22, 163, 74, .13); }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    height: 42px; padding: 0 19px; border-radius: 999px;
+    font-size: 14px; font-weight: 650; border: 1px solid transparent;
+    transition: transform .18s, box-shadow .18s, background-color .18s, border-color .18s, color .18s;
+    white-space: nowrap;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn-lg { height: 50px; padding: 0 26px; font-size: 15px; }
+  .btn-p { background: var(--grad); color: #fff; box-shadow: 0 14px 30px -14px rgba(37, 99, 235, .8); }
+  .btn-p:hover { box-shadow: 0 20px 40px -16px rgba(37, 99, 235, .85); }
+  .btn-g { background: rgba(255, 255, 255, .78); color: var(--ink); border-color: var(--line-2); }
+  .btn-g:hover { background: #fff; border-color: #b9c5db; }
+  .btn:focus-visible, a:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+
+  /* ---------- 首屏 ---------- */
+  .hero { padding: 64px 0 0; text-align: center; }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 7px 14px 7px 11px; border-radius: 999px;
+    background: rgba(255, 255, 255, .78); border: 1px solid var(--line-2);
+    box-shadow: 0 8px 24px -18px rgba(31, 45, 90, .45);
+    font-size: 12.5px; color: #47536a; backdrop-filter: blur(8px);
+  }
+  .hero-badge i {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 0 4px rgba(22, 163, 74, .12);
+  }
+  .hero h1 {
+    max-width: 980px; margin: 18px auto 0;
+    font-size: clamp(2.45rem, 7.1vw, 5.15rem);
+    line-height: 1.04; letter-spacing: -.055em; font-weight: 820;
+  }
+  .hero h1 em {
+    font-style: normal;
+    background: var(--grad);
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-fill-color: transparent;
+  }
+  .hero .lead {
+    max-width: 780px; margin: 18px auto 0;
+    font-size: clamp(15px, 1.55vw, 17.5px); color: var(--muted);
+  }
+  .cta { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .hero .cta { justify-content: center; margin-top: 24px; }
+  .hero .meta {
+    display: flex; justify-content: center; flex-wrap: wrap; gap: 10px 24px;
+    margin-top: 16px; font-size: 13px; color: #66718a;
+  }
+  .hero .meta span { display: inline-flex; align-items: center; gap: 7px; }
+  .hero .meta i {
+    width: 15px; height: 15px; border-radius: 50%;
+    background: linear-gradient(135deg, #e8f0ff, #f1ecff);
+    border: 1px solid #d9e4fb;
+    position: relative;
+  }
+  .hero .meta i::after {
+    content: ""; position: absolute; left: 4px; top: 4px;
+    width: 5px; height: 3px; border-left: 1.5px solid var(--blue); border-bottom: 1.5px solid var(--blue);
+    transform: rotate(-45deg);
+  }
+  .note { margin-top: 14px; font-size: 12.5px; color: var(--dim); }
+  .note a { color: #41506b; text-decoration: underline; text-underline-offset: 3px; }
+  .note a:hover { color: var(--blue); }
+
+  /* ---------- 产品界面 ---------- */
+  .stage { position: relative; max-width: 1120px; margin: 64px auto 0; }
+  .stage-glow {
+    position: absolute; left: 4%; right: 4%; top: 12%; bottom: -8%; z-index: 0;
+    background: linear-gradient(120deg, rgba(37,99,235,.3), rgba(124,58,237,.22) 52%, rgba(8,145,178,.24));
+    filter: blur(64px); border-radius: 46%;
+  }
+  .browser {
+    position: relative; z-index: 1; overflow: hidden;
+    border-radius: 22px; background: var(--surface);
+    border: 1px solid rgba(211, 219, 235, .95);
+    box-shadow: 0 60px 130px -52px rgba(24, 38, 84, .45), 0 20px 46px -28px rgba(24, 38, 84, .26);
+    text-align: left;
+    transform: perspective(1400px) rotateX(2.4deg);
+    transition: transform .5s cubic-bezier(.2,.7,.2,1), box-shadow .5s;
+  }
+  .browser:hover { transform: perspective(1400px) rotateX(0) translateY(-5px); }
+  .browser-bar {
+    display: flex; align-items: center; gap: 12px;
+    height: 48px; padding: 0 16px;
+    background: #f8f9fc; border-bottom: 1px solid #e9ecf3;
+  }
+  .dots { display: flex; gap: 6px; flex: 0 0 auto; }
+  .dots i { width: 9px; height: 9px; border-radius: 50%; background: #dfe4ee; }
+  .dots i:first-child { background: #f3b5ad; }
+  .dots i:nth-child(2) { background: #f0d29a; }
+  .dots i:nth-child(3) { background: #a9d9b7; }
+  .url {
+    display: flex; align-items: center; gap: 7px; flex: 0 1 340px;
+    height: 28px; padding: 0 11px; border-radius: 8px;
+    background: #fff; border: 1px solid #e7ebf3;
+    font: 11.5px var(--mono); color: #7a8499;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .url b { width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex: 0 0 auto; }
+  .bar-tag { margin-left: auto; font: 9.5px var(--mono); letter-spacing: .12em; color: #98a2b5; white-space: nowrap; }
+
+  .app { display: grid; grid-template-columns: 206px minmax(0, 1fr); min-height: 480px; }
+  .side { display: flex; flex-direction: column; gap: 18px; padding: 18px 13px 16px; background: #fbfcfe; border-right: 1px solid #eceff5; }
+  .side-brand { display: flex; align-items: center; gap: 8px; padding: 2px 7px 6px; }
+  .side-mark { width: 24px; height: 24px; border-radius: 7px; background: var(--grad); flex: 0 0 auto; }
+  .side-brand b { font-size: 11.5px; letter-spacing: -.01em; }
+  .side-brand small { display: block; font: 8px var(--mono); color: #9aa5b9; letter-spacing: .12em; }
+  .side-nav { display: flex; flex-direction: column; gap: 2px; }
+  .side-item {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 9px; border-radius: 8px;
+    font-size: 11.5px; color: #6a758a;
+  }
+  .side-item i { width: 7px; height: 7px; border-radius: 2px; background: #c7d0e0; flex: 0 0 auto; }
+  .side-item.on { background: #eef4ff; color: var(--blue); font-weight: 700; }
+  .side-item.on i { background: var(--blue); box-shadow: 0 0 0 3px rgba(37, 99, 235, .12); }
+  .side-user { display: flex; align-items: center; gap: 8px; margin-top: auto; padding: 9px; border-radius: 10px; background: #fff; border: 1px solid #eceff5; }
+  .side-av { width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(135deg, #c7d7ff, #e8d9ff); flex: 0 0 auto; }
+  .side-user b { display: block; font-size: 10px; }
+  .side-user small { display: block; font-size: 8.5px; color: #98a2b5; }
+
+  .app-main { min-width: 0; padding: 20px 22px 22px; }
+  .app-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .hello h3 { font-size: 17px; letter-spacing: -.025em; }
+  .hello small { display: block; margin-top: 3px; font-size: 10.5px; color: #8b95a8; }
+  .pill-ok {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 9px; border-radius: 999px;
+    background: #edf8f1; border: 1px solid #d5eddd;
+    font-size: 9.5px; color: #1c7a49; white-space: nowrap;
+  }
+  .pill-ok i { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+
+  .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; margin-top: 16px; }
+  .metric { padding: 10px 11px; border-radius: 11px; background: #f8f9fc; border: 1px solid #eceff5; }
+  .metric small { display: block; font: 8.5px var(--mono); letter-spacing: .08em; color: #98a2b5; white-space: nowrap; }
+  .metric b { display: block; margin-top: 3px; font-size: 19px; line-height: 1.2; letter-spacing: -.03em; }
+  .metric b em { font-style: normal; font-size: 9.5px; color: #8b95a8; font-weight: 500; margin-left: 2px; }
+  .metric:nth-child(1) b { color: var(--blue); }
+  .metric:nth-child(2) b { color: var(--violet); }
+  .metric:nth-child(3) b { color: var(--cyan); }
+  .metric:nth-child(4) b { color: var(--orange); }
+
+  .app-grid { display: grid; grid-template-columns: 1.08fr .92fr; gap: 10px; margin-top: 11px; }
+  .panel { min-width: 0; padding: 12px; border-radius: 12px; background: #fff; border: 1px solid #eceff5; }
+  .panel-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .panel-h h4 { font-size: 11px; letter-spacing: -.01em; }
+  .panel-h span { font: 8.5px var(--mono); letter-spacing: .08em; color: #a1aabc; }
+
+  .week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; margin-top: 10px; }
+  .day { padding: 5px 2px 4px; border-radius: 6px; text-align: center; background: #f8f9fc; }
+  .day small { display: block; font: 8px var(--mono); color: #98a2b5; }
+  .day b { display: block; margin-top: 1px; font-size: 10px; }
+  .day i { display: block; width: 4px; height: 4px; margin: 3px auto 0; border-radius: 50%; background: #d7ddea; }
+  .day.on { background: var(--grad); color: #fff; }
+  .day.on small { color: rgba(255,255,255,.72); }
+  .day.on i { background: #fff; }
+  .maps { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+  .map { padding: 4px 8px; border-radius: 999px; background: #eef4ff; border: 1px solid #dce7ff; font-size: 9.5px; color: #315ea8; }
+  .map:nth-child(2) { background: #f4efff; border-color: #e6dcff; color: #6741b5; }
+  .map:nth-child(3) { background: #eaf8fb; border-color: #d3eff5; color: #0e7490; }
+
+  .roster { display: flex; flex-direction: column; gap: 7px; margin-top: 10px; }
+  .person { display: flex; align-items: center; gap: 8px; }
+  .person .av { width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(135deg, #dbe6ff, #ece2ff); flex: 0 0 auto; }
+  .person:nth-child(2) .av { background: linear-gradient(135deg, #ffe6d6, #ffd9e5); }
+  .person:nth-child(3) .av { background: linear-gradient(135deg, #d7f4ee, #dce9ff); }
+  .person:nth-child(4) .av { background: linear-gradient(135deg, #e8e0ff, #d9f0ff); }
+  .person b { display: block; font-size: 10px; font-weight: 650; }
+  .person small { display: block; font-size: 8.5px; color: #98a2b5; }
+  .role { margin-left: auto; padding: 3px 7px; border-radius: 999px; background: #f3f5fa; border: 1px solid #e8ecf4; font: 8.5px var(--mono); color: #7a8499; white-space: nowrap; }
+
+  .scrims { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .scrim-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 7px; background: #f8f9fc; }
+  .scrim-row time { font: 9px var(--mono); color: #7a8499; white-space: nowrap; }
+  .scrim-row b { font-size: 9.5px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .scrim-row span { margin-left: auto; padding: 2px 6px; border-radius: 999px; background: #fff; border: 1px solid #e7ebf3; font-size: 8px; color: #8b95a8; white-space: nowrap; }
+  .scrim-row.acc span { background: #edf8f1; border-color: #d5eddd; color: #1c7a49; }
+
+  .float {
+    position: absolute; z-index: 2;
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 11px 14px; border-radius: 14px;
+    background: rgba(255, 255, 255, .94); border: 1px solid #e2e7f2;
+    box-shadow: 0 22px 54px -28px rgba(31, 45, 90, .48);
+    backdrop-filter: blur(10px);
+    animation: float 6.5s ease-in-out infinite;
+  }
+  .float small { font: 8.5px var(--mono); letter-spacing: .13em; color: #98a2b5; }
+  .float b { font-size: 12.5px; letter-spacing: -.01em; }
+  .float-a { left: 4%; top: -56px; }
+  .float-c { right: 5%; bottom: -26px; animation-delay: -3.2s; }
+
+  /* ---------- 能力带 ---------- */
+  .cap-strip { margin-top: 64px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, .55); overflow: hidden; }
+  .cap-track { display: flex; width: max-content; animation: marquee 38s linear infinite; }
+  .cap-strip:hover .cap-track { animation-play-state: paused; }
+  .cap-half { display: flex; align-items: center; gap: 26px; padding: 16px 26px 16px 0; }
+  .cap-half span { font: 11px var(--mono); letter-spacing: .1em; color: #6b768c; white-space: nowrap; }
+  .cap-half i { width: 4px; height: 4px; border-radius: 50%; background: #b9c3d6; flex: 0 0 auto; }
+
+  /* ---------- 通用区块 ---------- */
+  .sec { padding-top: 86px; }
+  .sec-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 26px; margin-bottom: 28px; }
+  .eyebrow { display: flex; align-items: center; gap: 8px; font: 10px var(--mono); letter-spacing: .16em; color: var(--blue); text-transform: uppercase; }
+  .eyebrow i { width: 18px; height: 2px; border-radius: 2px; background: var(--grad); flex: 0 0 auto; }
+  .sec-h { margin-top: 9px; font-size: clamp(1.9rem, 3.3vw, 2.8rem); line-height: 1.1; letter-spacing: -.045em; font-weight: 800; }
+  .sec-s { max-width: 36em; font-size: 14px; color: var(--muted); text-align: right; }
+
+  /* ---------- 真实数据 ---------- */
+  .stats-band {
+    padding: 30px; border-radius: 26px;
+    background: linear-gradient(180deg, #ffffff 0%, #f2f6ff 100%);
+    border: 1px solid #dfe6f5;
+    box-shadow: 0 34px 90px -58px rgba(37, 99, 235, .5);
+  }
+  .stats-band .sec-head { align-items: flex-start; margin-bottom: 22px; }
+  .stats-band .sec-s { max-width: 30em; }
+  .stats { display: grid; grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)); gap: 12px; }
+  .stat {
+    position: relative; overflow: hidden;
+    padding: 22px 22px 20px; border-radius: 16px;
+    background: rgba(255, 255, 255, .88); border: 1px solid #e2e8f4;
+    transition: transform .25s, box-shadow .25s, border-color .25s;
+  }
+  .stat::before {
+    content: ""; position: absolute; left: 0; top: 0; width: 100%; height: 3px;
+    background: linear-gradient(90deg, var(--blue), var(--violet) 52%, var(--cyan));
+    opacity: .8;
+  }
+  .stat:nth-child(2)::before { background: linear-gradient(90deg, var(--violet), #db2777); }
+  .stat:nth-child(3)::before { background: linear-gradient(90deg, var(--cyan), var(--blue)); }
+  .stat:nth-child(4)::before { background: linear-gradient(90deg, var(--orange), #db2777); }
+  .stat:hover { transform: translateY(-3px); border-color: #cdd9f2; box-shadow: 0 26px 54px -38px rgba(37, 99, 235, .55); }
+  .stat b { display: block; font-size: clamp(2.05rem, 3.1vw, 2.85rem); line-height: 1; letter-spacing: -.045em; font-weight: 820; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .stat span { display: block; margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+  .stats-off { padding: 26px; border-radius: 16px; background: #fff; border: 1px solid #e2e8f4; color: var(--muted); text-align: center; font-size: 14px; }
+
+  /* ---------- 功能 ---------- */
+  .feat { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; }
+  .feat-i {
+    position: relative; overflow: hidden;
+    padding: 21px 20px 20px; border-radius: 18px;
+    background: #fff; border: 1px solid var(--line);
+    box-shadow: 0 1px 2px rgba(20, 30, 60, .03);
+    transition: transform .25s, box-shadow .25s, border-color .25s;
+  }
+  .feat-i::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0;
+    background: radial-gradient(240px circle at var(--mx, 50%) var(--my, 0%), rgba(37, 99, 235, .09), transparent 64%);
+    transition: opacity .25s;
+  }
+  .feat-i:hover { transform: translateY(-4px); border-color: #c9d6f8; box-shadow: 0 28px 60px -42px rgba(37, 99, 235, .5); }
+  .feat-i:hover::after { opacity: 1; }
+  .feat-ico {
+    display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; border-radius: 12px;
+    background: linear-gradient(135deg, #eef4ff, #f3efff); color: var(--blue);
+    border: 1px solid #e0e8fb;
+  }
+  .feat-ico svg { width: 20px; height: 20px; }
+  .feat-i:nth-child(3n+2) .feat-ico { color: var(--violet); background: linear-gradient(135deg, #f5f0ff, #edf1ff); border-color: #e7defb; }
+  .feat-i:nth-child(3n+3) .feat-ico { color: var(--cyan); background: linear-gradient(135deg, #ecfafd, #eef4ff); border-color: #d9eef4; }
+  .feat-i h3 { margin-top: 15px; font-size: 15.5px; letter-spacing: -.015em; color: var(--ink); }
+  .feat-i p { margin-top: 6px; font-size: 13px; line-height: 1.72; color: var(--muted); }
+
+  /* ---------- 图片故事 ---------- */
+  .story { display: grid; grid-template-columns: 1.12fr .88fr; gap: clamp(30px, 4.5vw, 58px); align-items: center; }
+  .story-visual { position: relative; min-width: 0; }
+  .story-photo {
+    position: relative; overflow: hidden; aspect-ratio: 16 / 10;
+    border-radius: 26px; border: 1px solid #dfe6f3; background: #e9eef7;
+    box-shadow: 0 36px 86px -52px rgba(24, 38, 84, .55);
+  }
+  .story-photo img {
+    display: block; width: 100%; height: 100%; object-fit: cover;
+    transition: transform 1s cubic-bezier(.2,.7,.2,1);
+  }
+  .story-photo:hover img { transform: scale(1.06); }
+  .story-photo::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(180deg, rgba(7,12,24,0) 48%, rgba(7,12,24,.45));
+  }
+  .story-badge {
+    position: absolute; left: 18px; bottom: 16px; z-index: 2;
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 7px 12px; border-radius: 999px;
+    background: rgba(255, 255, 255, .92); border: 1px solid rgba(255,255,255,.65);
+    font: 9.5px var(--mono); letter-spacing: .1em; color: #2b3a55;
+    backdrop-filter: blur(8px);
+  }
+  .story-badge i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  .story-mini {
+    position: absolute; right: -18px; bottom: -28px; z-index: 3;
+    width: 216px; padding: 8px; border-radius: 16px;
+    background: #fff; border: 1px solid #e2e8f4;
+    box-shadow: 0 28px 62px -32px rgba(24, 38, 84, .58);
+    transform: rotate(-1.5deg);
+  }
+  .mini-bar { display: flex; align-items: center; gap: 5px; padding: 2px 2px 7px; }
+  .mini-bar i { width: 5px; height: 5px; border-radius: 50%; background: #dfe4ee; }
+  .mini-bar i:first-child { background: #f3b5ad; }
+  .mini-bar i:nth-child(2) { background: #f0d29a; }
+  .mini-bar i:nth-child(3) { background: #a9d9b7; }
+  .mini-bar span { margin-left: auto; font: 7.5px var(--mono); letter-spacing: .1em; color: #98a2b5; }
+  .mini-shot { overflow: hidden; aspect-ratio: 16 / 9; border-radius: 10px; background: #0a0f18; }
+  .mini-shot img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .mini-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 7px 2px 1px; }
+  .mini-foot b { font-size: 9.5px; }
+  .mini-foot span { font: 7.5px var(--mono); color: #98a2b5; }
+  .story-copy { min-width: 0; }
+  .story-copy .sec-h { margin-top: 9px; }
+  .story-copy > p { margin-top: 12px; font-size: 14px; line-height: 1.8; color: var(--muted); }
+  .story-list { list-style: none; display: grid; gap: 10px; margin-top: 20px; }
+  .story-list li { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; line-height: 1.7; color: #46536a; }
+  .story-list i {
+    position: relative; flex: 0 0 auto; width: 18px; height: 18px; margin-top: 2px;
+    border-radius: 50%; background: linear-gradient(135deg, #e8f0ff, #f1ecff); border: 1px solid #d9e4fb;
+  }
+  .story-list i::after {
+    content: ""; position: absolute; left: 5px; top: 5px; width: 6px; height: 3px;
+    border-left: 1.5px solid var(--blue); border-bottom: 1.5px solid var(--blue);
+    transform: rotate(-45deg);
+  }
+  .story-list b { color: var(--ink); font-weight: 650; }
+
+  /* ---------- 步骤 ---------- */
+  .steps { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; }
+  .steps::before {
+    content: ""; position: absolute; left: 5%; right: 5%; top: 40px; height: 1px;
+    background: linear-gradient(90deg, transparent, #cbd8f4 14%, #d9d2f4 50%, #c8e7ef 86%, transparent);
+  }
+  .step { position: relative; padding: 22px 21px; border-radius: 18px; background: #fff; border: 1px solid var(--line); transition: transform .25s, border-color .25s, box-shadow .25s; }
+  .step:hover { transform: translateY(-3px); border-color: #cdd9f2; box-shadow: 0 24px 52px -40px rgba(37, 99, 235, .45); }
+  .step-num {
+    position: relative; z-index: 1;
+    display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; border-radius: 50%;
+    background: var(--grad); color: #fff;
+    font: 12px var(--mono); font-weight: 700;
+    box-shadow: 0 12px 26px -12px rgba(37, 99, 235, .75), 0 0 0 6px #fff;
+  }
+  .step:nth-child(4) .step-num { background: linear-gradient(135deg, #c2410c, #9d174d); box-shadow: 0 12px 26px -12px rgba(194, 65, 12, .7), 0 0 0 6px #fff; }
+  .step h3 { margin-top: 16px; font-size: 15.5px; letter-spacing: -.015em; }
+  .step p { margin-top: 6px; font-size: 13px; line-height: 1.72; color: var(--muted); }
+
+  /* ---------- 末尾 CTA ---------- */
+  .final {
+    position: relative; overflow: hidden;
+    padding: clamp(46px, 7vw, 88px) 28px;
+    border-radius: 28px; text-align: center; color: #fff;
+    background: linear-gradient(120deg, #1d4ed8 0%, #5b21b6 52%, #0e7490 100%);
+    box-shadow: 0 44px 110px -54px rgba(37, 99, 235, .85);
+  }
+  .final::before {
+    content: ""; position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.055) 1px, transparent 1px);
+    background-size: 46px 46px;
+    mask-image: radial-gradient(ellipse at 50% 20%, #000 10%, transparent 70%);
+    -webkit-mask-image: radial-gradient(ellipse at 50% 20%, #000 10%, transparent 70%);
+  }
+  .final::after {
+    content: ""; position: absolute; left: 50%; top: -180px; width: 720px; height: 420px;
+    transform: translateX(-50%);
+    background: radial-gradient(ellipse, rgba(255,255,255,.24), transparent 66%);
+    pointer-events: none;
+  }
+  .final > * { position: relative; z-index: 1; }
+  .final .eyebrow { justify-content: center; color: rgba(255,255,255,.72); }
+  .final .eyebrow i { background: #fff; }
+  .final h2 { margin-top: 12px; font-size: clamp(2rem, 4.4vw, 3.4rem); line-height: 1.08; letter-spacing: -.05em; font-weight: 820; }
+  .final p { max-width: 42em; margin: 14px auto 28px; font-size: 14.5px; color: rgba(255,255,255,.8); }
+  .final .cta { justify-content: center; }
+  .final .btn { background: #fff; color: #1e3a8a; box-shadow: 0 18px 44px -18px rgba(0, 0, 0, .45); }
+  .final .btn:hover { color: #172554; }
+  .final-note { margin-top: 18px; font-size: 13px; color: rgba(255,255,255,.7); }
+  .final-note a { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
+
+  /* ---------- 页脚 ---------- */
+  footer { margin-top: 86px; border-top: 1px solid var(--line); background: rgba(255, 255, 255, .7); }
+  .ft { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 22px; padding: 26px 0; font-size: 12.5px; color: var(--dim); }
+  .ft a { color: #5f6b80; }
+  .ft a:hover { color: var(--blue); }
+  .ft .sp { margin-left: auto; }
+  .ft .copy { font: 10px var(--mono); letter-spacing: .08em; color: #98a2b5; }
+
+  /* ---------- 动效 ---------- */
+  .js .reveal { opacity: 0; transform: translateY(18px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.7,.2,1); }
+  .js .reveal.in { opacity: 1; transform: none; }
+  @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+  @keyframes marquee { to { transform: translateX(-50%); } }
+  @keyframes drift { 0% { transform: translate3d(0,0,0) scale(1); } 100% { transform: translate3d(22px, 18px, 0) scale(1.06); } }
+
+  /* ---------- 响应式 ---------- */
+  @media (max-width: 1080px) {
+    .links { gap: 18px; margin-left: 4px; }
+    .sys { display: none; }
+    .app { grid-template-columns: 180px minmax(0, 1fr); }
+    .feat { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (max-width: 900px) {
+    .links { display: none; }
+    .nav-in { height: 64px; }
+    .hero { padding-top: 62px; }
+    .browser { transform: none; }
+    .app { grid-template-columns: 168px minmax(0, 1fr); }
+    .float { display: none; }
+    .sec-head { align-items: flex-start; flex-direction: column; gap: 10px; }
+    .sec-s { text-align: left; }
+    .feat { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .steps::before { display: none; }
+    .sec { padding-top: 68px; }
+    .story { grid-template-columns: minmax(0, 1fr); gap: 46px; }
+    .story-mini { right: 14px; bottom: -20px; }
+  }
+  @media (max-width: 760px) {
+    .side { display: none; }
+    .app { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+    .app-main { padding: 16px 14px 18px; }
+    .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .app-grid { grid-template-columns: minmax(0, 1fr); }
+    .scrim-panel { display: none; }
+    .stats-band { padding: 20px; }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 620px) {
+    .wrap { width: calc(100% - 32px); }
+    .brand-text small { display: none; }
+    .acts { gap: 7px; }
+    .acts .btn { height: 37px; padding: 0 13px; font-size: 13px; }
+    .hero { padding-top: 46px; }
+    .hero-badge { font-size: 11.5px; }
+    .hero h1 { margin-top: 18px; }
+    .hero .lead { margin-top: 17px; }
+    .hero .cta { margin-top: 24px; gap: 9px; }
+    .cta .btn-lg { height: 46px; padding: 0 20px; font-size: 14.5px; }
+    .hero .meta { gap: 8px 16px; font-size: 12px; }
+    .note { font-size: 12px; }
+    .stage { margin-top: 38px; }
+    .browser-bar { height: 42px; padding: 0 12px; }
+    .url { flex: 1 1 auto; }
+    .bar-tag { display: none; }
+    .app-top { flex-direction: column; }
+    .panel-h span { display: none; }
+    .feat { grid-template-columns: minmax(0, 1fr); }
+    .steps { grid-template-columns: minmax(0, 1fr); }
+    .stat { padding: 19px 18px 17px; }
+    .stats-band { padding: 16px; border-radius: 20px; }
+    .final { border-radius: 22px; }
+    .story-photo { border-radius: 20px; }
+    .story-badge { top: 12px; bottom: auto; left: 12px; font-size: 8.5px; }
+    .story-mini { position: relative; right: auto; bottom: auto; width: 62%; margin: -34px 10px 0 auto; transform: rotate(-1deg); }
+    .story-copy > p { font-size: 13.5px; }
+    .story-list li { font-size: 12.5px; }
+    .ft .sp { margin-left: 0; width: 100%; }
+  }
+  @media (max-width: 400px) {
+    .acts .btn-g { display: none; }
+    .brand-text { font-size: 14px; }
+    .hero h1 { font-size: 2.25rem; }
+    .hero .meta span:nth-child(3) { display: none; }
+    .stats { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after {
+      animation-duration: .001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .001ms !important;
+    }
+    .cap-track { animation: none; }
+    .js .reveal { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+<?php $hallOpen = !empty($stats['hallOpen']); ?>
+<a class="skip" href="#main">跳到主要内容</a>
+<div class="bg" aria-hidden="true">
+  <div class="bg-blob b1"></div>
+  <div class="bg-blob b2"></div>
+  <div class="bg-blob b3"></div>
+  <div class="bg-dots"></div>
+</div>
+<div class="progress" id="progress" aria-hidden="true"></div>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="/" aria-label="战队入驻平台首页">
+      <span class="logo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l8 3v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5l8-3zm0 2.2L6 6.4V11c0 3.9 2.6 7.6 6 8.9 3.4-1.3 6-5 6-8.9V6.4l-6-2.2zM11 7h2v4h4v2h-6V7z"/></svg></span>
+      <span class="brand-text">战队入驻平台<small>TEAM OPS SUITE</small></span>
+    </a>
+    <nav class="links" aria-label="主导航">
+      <a href="#features">系统里有什么</a>
+      <a href="#steps">怎么入驻</a>
+      <?php if ($hallOpen): ?><a href="/hall">公示大厅</a><?php endif; ?>
+    </nav>
+    <div class="acts">
+      <span class="sys" aria-hidden="true"><i></i> SYSTEM ONLINE</span>
+      <a class="btn btn-g" href="/login">平台登录</a>
+      <a class="btn btn-p" href="/register">注册入驻</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero wrap" id="top">
+    <div class="hero-badge"><i></i> 为战队日常而做 · 现邀请战队入驻</div>
+    <h1>一个战队，<br><em>一套自己的系统</em></h1>
+    <p class="lead">成员职责、轮换地图、枪码库、战绩上传、跨队约战、实战演练、聊天室与私聊——一支战队一个独立站点，从日常到比赛，一处管完。</p>
+    <div class="cta">
+      <a class="btn btn-p btn-lg" href="/register">申请入驻</a>
+      <?php if ($hallOpen): ?>
+      <a class="btn btn-g btn-lg" href="/hall">先看看别的战队</a>
+      <?php else: ?>
+      <a class="btn btn-g btn-lg" href="#steps">看看怎么入驻</a>
+      <?php endif; ?>
+    </div>
+    <div class="meta" aria-label="平台特点">
+      <span><i></i> 独立站点</span>
+      <span><i></i> 数据自持</span>
+      <span><i></i> 12 个模块</span>
+      <span><i></i> 无需下载</span>
+    </div>
+    <p class="note">已有平台账号？<a href="/login">直接登录</a>。战队成员请到所属战队站点注册，本平台账号只用于入驻与战队管理。</p>
+
+    <div class="stage">
+      <div class="stage-glow" aria-hidden="true"></div>
+      <div class="float float-a" aria-hidden="true"><small>JOIN REQUEST</small><b>入队申请 · 待审核</b></div>
+      <div class="float float-c" aria-hidden="true"><small>CROSS-TEAM</small><b>跨队约战 · 已确认</b></div>
+
+      <div class="browser" aria-label="战队系统界面示意" aria-hidden="true">
+        <div class="browser-bar">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span class="url"><b></b> team.your-domain.com</span>
+          <span class="bar-tag">界面示意 · SYS <?= ASSET_BUILD ?></span>
+        </div>
+        <div class="app">
+          <aside class="side">
+            <div class="side-brand"><span class="side-mark"></span><span><b>战队系统</b><small>OPS CONSOLE</small></span></div>
+            <nav class="side-nav">
+              <span class="side-item on"><i></i> 仪表盘</span>
+              <span class="side-item"><i></i> 成员与职责</span>
+              <span class="side-item"><i></i> 轮换地图</span>
+              <span class="side-item"><i></i> 枪码库</span>
+              <span class="side-item"><i></i> 战绩</span>
+              <span class="side-item"><i></i> 跨队约战</span>
+              <span class="side-item"><i></i> 实战演练</span>
+              <span class="side-item"><i></i> 聊天室</span>
+            </nav>
+            <div class="side-user"><span class="side-av"></span><span><b>队长</b><small>超管 · 在线</small></span></div>
+          </aside>
+
+          <div class="app-main">
+            <div class="app-top">
+              <div class="hello"><h3>晚上好，队长</h3><small>今天是本周第 3 个训练日</small></div>
+              <span class="pill-ok"><i></i> 本周轮换已发布</span>
+            </div>
+
+            <div class="metrics">
+              <div class="metric"><small>ONLINE</small><b>12<em>人</em></b></div>
+              <div class="metric"><small>ROTATION</small><b>7<em>天</em></b></div>
+              <div class="metric"><small>GUN CODES</small><b>36<em>条</em></b></div>
+              <div class="metric"><small>TODO</small><b>3<em>项</em></b></div>
+            </div>
+
+            <div class="app-grid">
+              <div class="panel">
+                <div class="panel-h"><h4>本周轮换</h4><span>WEEK 08</span></div>
+                <div class="week">
+                  <span class="day"><small>MON</small><b>一</b><i></i></span>
+                  <span class="day"><small>TUE</small><b>二</b><i></i></span>
+                  <span class="day on"><small>WED</small><b>三</b><i></i></span>
+                  <span class="day"><small>THU</small><b>四</b><i></i></span>
+                  <span class="day"><small>FRI</small><b>五</b><i></i></span>
+                  <span class="day"><small>SAT</small><b>六</b><i></i></span>
+                  <span class="day"><small>SUN</small><b>日</b><i></i></span>
+                </div>
+                <div class="maps">
+                  <span class="map">零号大坝</span>
+                  <span class="map">长弓溪谷</span>
+                  <span class="map">巴克什</span>
+                </div>
+              </div>
+
+              <div class="panel">
+                <div class="panel-h"><h4>成员与职责</h4><span>ROSTER</span></div>
+                <div class="roster">
+                  <div class="person"><span class="av"></span><span><b>队长</b><small>指挥 · 突击</small></span><span class="role">ADMIN</span></div>
+                  <div class="person"><span class="av"></span><span><b>副队</b><small>支援 · 后勤</small></span><span class="role">OFFICER</span></div>
+                  <div class="person"><span class="av"></span><span><b>队员</b><small>侦察 · 信息</small></span><span class="role">MEMBER</span></div>
+                  <div class="person"><span class="av"></span><span><b>队员</b><small>工程 · 载具</small></span><span class="role">MEMBER</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="app-grid scrim-panel">
+              <div class="panel">
+                <div class="panel-h"><h4>跨队约战</h4><span>SCRIMS</span></div>
+                <div class="scrims">
+                  <div class="scrim-row acc"><time>周五 20:30</time><b>训练赛 · BO3</b><span>已确认</span></div>
+                  <div class="scrim-row"><time>周六 21:00</time><b>正式赛 · BO5</b><span>待开赛</span></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h"><h4>战绩上传</h4><span>MATCH STATS</span></div>
+                <div class="scrims">
+                  <div class="scrim-row acc"><time>一人一行</time><b>成员自己上传</b><span>已同步</span></div>
+                  <div class="scrim-row"><time>管理员</time><b>只看汇总，不用代录</b><span>省事</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="cap-strip" aria-hidden="true">
+    <div class="cap-track">
+      <div class="cap-half">
+        <span>成员与职责</span><i></i><span>轮换地图</span><i></i><span>枪码库</span><i></i><span>战绩上传</span><i></i><span>跨队约战</span><i></i><span>实战演练</span><i></i><span>QQ 机器人</span><i></i><span>聊天室与私聊</span><i></i><span>对外展示页</span><i></i><span>数据导入导出</span><i></i><span>权限与留痕</span><i></i><span>独立域名</span><i></i>
+      </div>
+      <div class="cap-half">
+        <span>成员与职责</span><i></i><span>轮换地图</span><i></i><span>枪码库</span><i></i><span>战绩上传</span><i></i><span>跨队约战</span><i></i><span>实战演练</span><i></i><span>QQ 机器人</span><i></i><span>聊天室与私聊</span><i></i><span>对外展示页</span><i></i><span>数据导入导出</span><i></i><span>权限与留痕</span><i></i><span>独立域名</span><i></i>
+      </div>
+    </div>
+  </div>
+
+  <?php
+    $tiles = [
+      [(int)($stats['tenants'] ?? 0), '已开通的战队站点'],
+      [(int)($stats['players'] ?? 0), '在各队注册过的玩家'],
+      [(int)($stats['battles'] ?? 0), '办过的跨队约战'],
+      [(int)($stats['gunCodes'] ?? 0), '收进库的枪码'],
+    ];
+    // 空库的新站不该在首页摆一排 0；四个全空时整条换成一句话
+    $shown = array_values(array_filter($tiles, function ($x) { return $x[0] > 0; }));
+  ?>
+  <section class="sec wrap reveal" aria-labelledby="stats-h">
+    <div class="stats-band">
+      <div class="sec-head">
+        <div>
+          <div class="eyebrow"><i></i> LIVE TELEMETRY</div>
+          <h2 class="sec-h" id="stats-h">平台正在运行</h2>
+        </div>
+        <p class="sec-s">数字来自平台实时统计，只给聚合数，不公开任何战队与玩家身份。</p>
+      </div>
+      <?php if ($shown): ?>
+      <div class="stats" style="--n:<?= count($shown) ?>">
+        <?php foreach ($shown as $x): ?>
+        <div class="stat card"><b><?= number_format($x[0]) ?></b><span><?= $x[1] ?></span></div>
+        <?php endforeach; ?>
+      </div>
+      <?php else: ?>
+      <div class="stats-off card">首批入驻的战队正在开通，现在进来就是第一支。</div>
+      <?php endif; ?>
+    </div>
+  </section>
+
+  <section class="sec wrap reveal" id="features" aria-labelledby="features-h">
+    <div class="sec-head">
+      <div>
+        <div class="eyebrow"><i></i> 01 / MODULES</div>
+        <h2 class="sec-h" id="features-h">系统里有什么</h2>
+      </div>
+      <p class="sec-s">都是战队日常真要用的东西，不是摆着看的模块。</p>
+    </div>
+    <div class="feat">
+      <div class="feat-i">
+        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.6c2.8.2 5 2.5 5 5.4"/></svg></span>
+        <h3>成员与职责</h3><p>入队审核、职责标签、角色分工，谁在队里干什么一眼看得清。</p>
+      </div>
+      <div class="feat-i">
+        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2V6z"/><path d="M9 4v14M15 6v14"/></svg></span>
+        <h3>轮换地图</h3><p>每天的轮换安排和地图池自己排，队员打开站点就知道今晚打什么。</p>
+      </div>
+      <div class="feat-i">
+        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><circle cx="12" cy="12" r="2"/></svg></span>
+        <h3>枪码库</h3><p>按武器类别归档：冲锋枪、突击步枪、狙击步枪、精准射手步枪……共建一整套。</p>
+      </div>
+      <div class="feat-i">
+        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/><path d="M15 5l4-3 3 3"/></svg></span>
+        <h3>战绩上传</h3><p>成员自己登录上传，一人一行覆盖自己的，管理员不用挨个录。</p>
+      </div>
+      <div class="feat-i">
+        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l12 12M20 4L8 16"/><path d="M14 19l5 1 1-5M6 19l-5 1-1-5"/></svg></span>
+        <h3>跨队约战</h3><p>平台总线对接其他战队，约战、演练、赛事中心都在站内完成。</p>
+      </div>
+      <div class="feat-i">
+        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1"/></svg></span>
+        <h3>实战演练</h3><p>报名、分组、比分，演练流程留在系统里，打完能复盘。</p>
+      </div>
+      <div class="feat-i">
+        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="7" width="16" height="12" rx="3"/><circle cx="9" cy="13" r="1.4"/><circle cx="15" cy="13" r="1.4"/><path d="M12 3v4M2 12h2M20 12h2M9 19v2M15 19v2"/></svg></span>
+        <h3>战队自己的 QQ 机器人</h3><p>群里 @ 一下就查战绩、看日程、签到；机器人各队各配一台，凭据握在战队自己手里。</p>
+      </div>
+      <div class="feat-i">
+        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h12v8H8l-4 4V5z"/><path d="M9 9h10v7h-4l-3 3v-3H9"/></svg></span>
+        <h3>聊天室与私聊</h3><p>战队群加一对一，私聊正文只有双方能看，管理员要处理得先挂举报。</p>
+      </div>
+      <div class="feat-i">
+        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M9 9v11"/></svg></span>
+        <h3>对外展示页</h3><p>每支战队一张公开主页，招募和荣誉摆在外面，访客不留身份。</p>
+      </div>
+      <div class="feat-i">
+        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v10M8 9l4 4 4-4"/><path d="M5 15v4h14v-4"/></svg></span>
+        <h3>数据导入导出</h3><p>整站数据打包，换服务器换域名自己就能搬，不必求人。</p>
+      </div>
+      <div class="feat-i">
+        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg></span>
+        <h3>权限与留痕</h3><p>分层权限、操作日志、登录记录，谁改过什么都能查回来。</p>
+      </div>
+      <div class="feat-i">
+        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c2.5 2.2 2.5 13.8 0 16M12 4c-2.5 2.2-2.5 13.8 0 16"/></svg></span>
+        <h3>战队自己的域名</h3><p>入驻即得一个独立目录站点，登录页配图换成你们战队的图。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec wrap" id="story" aria-labelledby="story-h">
+    <div class="story">
+      <div class="story-visual">
+        <div class="story-photo">
+          <img src="/static/img/team-training.webp" alt="战队成员围在战术地图前讨论训练安排" width="1536" height="960" decoding="async">
+          <span class="story-badge"><i></i> TRAINING ROOM · 战队日常</span>
+        </div>
+        <div class="story-mini" aria-hidden="true">
+          <div class="mini-bar"><i></i><i></i><i></i><span>TEAM PAGE</span></div>
+          <div class="mini-shot"><img src="/static/img/login-poster.webp" alt="" width="512" height="512" decoding="async"></div>
+          <div class="mini-foot"><b>战队主页 · 对外展示</b><span>PUBLIC</span></div>
+        </div>
+      </div>
+      <div class="story-copy">
+        <div class="eyebrow"><i></i> IN ACTION</div>
+        <h2 class="sec-h" id="story-h">训练、约战、复盘，<br>都在同一个站点里</h2>
+        <p>白天排轮换、晚上打约战，打完把战绩和复盘留在站内。队员打开同一个地址，看到的是同一份安排。</p>
+        <ul class="story-list">
+          <li><i></i><span><b>轮换地图</b>：今晚打哪几张，队员自己看，不用群里反复问。</span></li>
+          <li><i></i><span><b>跨队约战</b>：时间、比分、复盘都留在站内，换人也能接上。</span></li>
+          <li><i></i><span><b>对外展示</b>：招募、荣誉和联系方式摆在一张公开主页上。</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec wrap reveal" id="steps" aria-labelledby="steps-h">
+    <div class="sec-head">
+      <div>
+        <div class="eyebrow"><i></i> 02 / DEPLOY</div>
+        <h2 class="sec-h" id="steps-h">怎么入驻</h2>
+      </div>
+      <p class="sec-s">四步，全程在网页里办完。</p>
+    </div>
+    <div class="steps">
+      <div class="step"><span class="step-num">01</span><h3>注册平台账号</h3><p>用队长 QQ 号注册，不用邮箱，也不用下载任何东西。</p></div>
+      <div class="step"><span class="step-num">02</span><h3>提交入驻申请</h3><p>起站点目录名、写战队简介、附一张队长身份证明截图。</p></div>
+      <div class="step"><span class="step-num">03</span><h3>平台审核</h3><p>超管核对身份，通过即开通；不通过会告诉你缺什么。</p></div>
+      <div class="step"><span class="step-num">04</span><h3>拉成员进来</h3><p>把站点地址发到战队群，成员自己注册、自己上传战绩。</p></div>
+    </div>
+  </section>
+
+  <section class="sec wrap reveal">
+    <div class="final">
+      <div class="eyebrow"><i></i> 03 / READY</div>
+      <h2>现邀请战队入驻</h2>
+      <p>入驻之后这套系统就是你的了：成员、地图轮换、枪码、战绩、约战、聊天室，一处管完。</p>
+      <div class="cta"><a class="btn btn-lg" href="/register">注册平台账号</a></div>
+      <div class="final-note">已有账号，<a href="/login">去登录</a></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap ft">
+    <a href="/terms">服务条款</a>
+    <a href="/privacy">隐私政策</a>
+    <?php if ($hallOpen): ?><a href="/hall">公示大厅</a><?php endif; ?>
+    <a href="/login">平台登录</a>
+    <span class="sp">战队成员请在所属战队站点注册</span>
+    <span class="copy">© <?= date('Y') ?> DPX1.ICU</span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var doc = document.documentElement;
+  doc.classList.add('js');
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var progress = document.getElementById('progress');
+  if (progress) {
+    var onScroll = function () {
+      var max = doc.scrollHeight - doc.clientHeight;
+      var p = max > 0 ? doc.scrollTop / max : 0;
+      progress.style.transform = 'scaleX(' + p + ')';
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  }
+
+  var reveals = document.querySelectorAll('.reveal');
+  var revealAll = function () {
+    for (var i = 0; i < reveals.length; i++) { reveals[i].classList.add('in'); }
+  };
+  if (reduce || !('IntersectionObserver' in window)) {
+    revealAll();
+  } else {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) { entry.target.classList.add('in'); io.unobserve(entry.target); }
+      });
+    }, { threshold: .12, rootMargin: '0px 0px -8% 0px' });
+    for (var j = 0; j < reveals.length; j++) { io.observe(reveals[j]); }
+    window.setTimeout(revealAll, 2600);
+  }
+
+  var counters = document.querySelectorAll('.stat b');
+  var countUp = function (el) {
+    var raw = el.textContent.trim();
+    var target = parseInt(raw.replace(/,/g, ''), 10);
+    if (!isFinite(target) || target <= 0) { return; }
+    var start = null;
+    var step = function (ts) {
+      if (start === null) { start = ts; }
+      var t = Math.min(1, (ts - start) / 900);
+      var eased = 1 - Math.pow(1 - t, 3);
+      el.textContent = Math.round(target * eased).toLocaleString('en-US');
+      if (t < 1) { window.requestAnimationFrame(step); } else { el.textContent = raw; }
+    };
+    window.requestAnimationFrame(step);
+  };
+  if (!reduce && counters.length) {
+    if ('IntersectionObserver' in window) {
+      var cio = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) { countUp(entry.target); cio.unobserve(entry.target); }
+        });
+      }, { threshold: .5 });
+      for (var k = 0; k < counters.length; k++) { cio.observe(counters[k]); }
+    } else {
+      for (var m = 0; m < counters.length; m++) { countUp(counters[m]); }
+    }
+  }
+
+  if (!reduce && window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
+    var cards = document.querySelectorAll('.feat-i');
+    for (var n = 0; n < cards.length; n++) {
+      cards[n].addEventListener('pointermove', function (e) {
+        var r = this.getBoundingClientRect();
+        this.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+        this.style.setProperty('--my', (e.clientY - r.top) + 'px');
+      });
+    }
+  }
+})();
+</script>
+</body>
+</html>

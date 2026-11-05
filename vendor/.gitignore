@@ -1,2 +1,1 @@
-*
-!.gitignore
+# 依赖随源码发布（README：部署无需 composer），此处不再整体忽略目录。

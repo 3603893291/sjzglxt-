@@ -7,6 +7,7 @@ use app\model\DutyMember;
 use app\model\DutySwap;
 use app\model\User;
 use app\service\DutyService;
+use app\service\GameSide;
 
 /**
  * 值班表·成员端（v5.6.0）
@@ -23,6 +24,7 @@ class Duty extends AuthBase
         return api_ok([
             'date'   => $today,
             'duty'   => $duty,
+            'zone'   => GameSide::moduleOn('duty') ? GameSide::zone() : '',
             'is_me'  => $duty && $user && (int)$duty['user_id'] === (int)$user->id,
             'roster' => $this->roster(),
         ]);
@@ -105,12 +107,26 @@ class Duty extends AuthBase
         if (!$duty || (int)$duty['user_id'] !== (int)$user->id) {
             return api_err('只有该日值班人才能发起换班');
         }
+        $cfg = DutyService::config();
+        if (!$cfg) {
+            return api_err('值班表还没配置');
+        }
+        // v5.36.0：换班对象必须在这份值班花名册里；分端时还得是本端或不分类的人
+        $inRoster = DutyMember::where('config_id', $cfg->id)->where('user_id', $toUid)->find();
+        if (!$inRoster) {
+            return api_err('换班对象不在轮值名单里');
+        }
+        $toUser = User::find($toUid);
+        $toSide = $toUser ? GameSide::userSide($toUser) : '';
+        if ($toUser && $toSide !== '' && (string)$cfg->game_side !== '' && $toSide !== (string)$cfg->game_side) {
+            return api_err('换班对象不在这个专区');
+        }
         $dup = DutySwap::where('duty_date', $date)->where('from_uid', $user->id)->where('status', 'pending')->find();
         if ($dup) {
             return api_err('该日已有待确认的换班请求');
         }
         DutySwap::create([
-            'config_id' => (int)(DutyService::config()->id ?? 0),
+            'config_id' => (int)$cfg->id,
             'duty_date' => $date,
             'from_uid'  => $user->id,
             'to_uid'    => $toUid,

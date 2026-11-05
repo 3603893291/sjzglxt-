@@ -105,6 +105,12 @@ class TenantContext
         'www', 'api', 'app', 'admin', 'login', 'register', 'static',
         'storage', 'uploads', 'mail', 'smtp', 'dev', 'test', 'main',
         'assets', 'index', 'favicon', 'robots', 'apply', 'home',
+        // v5.20.0：/show 与 /hall 是新增的根级页面。slug 撞到 show 时，/{show}/show
+        // 会被解析成平台上下文再判 404，那支战队永远打不开自己的主页
+        'show', 'hall',
+        // v5.36.6：/passport/callback 是通行证唯一回调，必须留在根路径；
+        // 同名 slug 会把这条路由劫持成战队上下文
+        'passport',
     ];
 
     public static function validSlug(string $slug): bool

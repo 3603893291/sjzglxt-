@@ -48,25 +48,44 @@ class ResolveTenant
             ]);
 
             // v5.7.1(M2)：隐身巡查令牌不再直接走 URL——?_sv= 仅作一次性兑票：
-            // 校验通过后立即作废令牌，换发 2 小时 HttpOnly cookie，再 302 到不带令牌的干净地址，
-            // 避免令牌落入浏览器历史 / Referer / Nginx 与 CDN 日志
+            // 校验通过后立即作废令牌，换发 30 分钟 HttpOnly cookie，页面请求再 302 到不带令牌的干净地址，
+            // 避免令牌落入浏览器历史 / Referer / Nginx 与 CDN 日志。
+            // v5.16.0：巡查台账（/api/inspect/*）是 XHR，302 会让 fetch 读不到 JSON —— 这类请求就地续跑。
             $sv = (string)$request->get('_sv', '');
+            // v5.15.0(S-L4)：stealth_take_token 用一条带条件的 DELETE 同时完成校验与作废，
+            // 抢不到行（并发第二次请求 / 已过期 / 未登记）就不兑票。
+            // 原先 verify + consume 是两条 SQL，中间时间窗里第二个请求也能校验通过，
+            // 一枚巡查 URL 可以兑出两个巡查会话
+            // v5.16.0：兑票只认 GET/HEAD——否则任何人用一个带令牌的 POST 就能白烧掉这枚一次性令牌，
+            // 把正当的巡查者挡在门外（改密/撤销之类的写操作本来也不该由免登录入口完成）
             if ($sv !== ''
-                && stealth_verify_token((int)$tenant->id, $sv)
+                && in_array($request->method(), ['GET', 'HEAD'], true)
                 && in_array((string)$tenant->status, ['approved', 'paused', 'banned'], true)) {
-                stealth_consume_token((int)$tenant->id, $sv);
-                $secret = bin2hex(random_bytes(24));
-                stealth_register_session((int)$tenant->id, $secret);
-                \think\facade\Cookie::set(stealth_cookie_name(), $secret, [
-                    'expire'   => 7200,
-                    'path'     => '/' . (string)$tenant->slug,
-                    'httponly' => true,
-                    'samesite' => 'lax',
-                ]);
-                return redirect('/' . (string)$tenant->slug . '/app');
+                // v5.16.0：令牌行兑票即被 DELETE 掉，签发人只能趁还在这行时读一次（纯读，不参与鉴权）。
+                // 记进会话登记后，巡查台账的审计行才说得出「是谁授权的」。
+                $svIssuer = stealth_token_issuer((int)$tenant->id, $sv);
+                if (stealth_take_token((int)$tenant->id, $sv)) {
+                    $secret = bin2hex(random_bytes(24));
+                    stealth_register_session((int)$tenant->id, $secret, $svIssuer);
+                    \think\facade\Cookie::set(stealth_cookie_name(), $secret, [
+                        // v5.16.0：2 小时 → 30 分钟。巡查是最高权限的免登录入口，窗口越短，
+                        // 泄漏一枚 cookie 能做的事越少；平台超管「撤销巡查」也随时能把它清零。
+                        'expire'   => 1800,
+                        'path'     => '/' . (string)$tenant->slug,
+                        'httponly' => true,
+                        'samesite' => 'lax',
+                    ]);
+                    // 页面请求：302 到不带令牌的干净地址（令牌不落浏览器历史 / Referer / CDN 日志）。
+                    // API 请求：Cookie 已同步写进本次请求（think\Cookie::set 会 setCookie 到 Request），
+                    // 就地往下走「已兑票会话」分支即可，重定向只会让 fetch 拿到 HTML。
+                    if (strncmp(trim(substr($path, strlen($first)), '/'), 'api/', 4) !== 0) {
+                        return redirect('/' . (string)$tenant->slug . '/app');
+                    }
+                }
             }
 
             // 已兑票的巡查会话：cookie 内登记有效 + 只读请求才放行（banned/paused 站点也允许超管进入巡查）
+            // 每条请求都回库校验登记 ⇒ 平台点「撤销巡查」删掉登记后，这一路的 cookie 立刻失效
             $svCookie = (string)\think\facade\Cookie::get(stealth_cookie_name(), '');
             $stealth = $svCookie !== ''
                 && stealth_verify_token((int)$tenant->id, $svCookie)

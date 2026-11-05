@@ -3,15 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>游戏战队系统</title>
+  <?= \app\service\SeoMeta::head('战队主页') ?>
   <style>
     html, body { margin: 0; padding: 0; }
     body { background: #f5f5f7; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
     #boot { display: flex; align-items: center; justify-content: center; height: 100vh; color: #86868b; font-size: 14px; }
+    #cookie-consent-root { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9999; }
   </style>
 </head>
 <body>
   <div id="root"><div id="boot">页面加载中...</div></div>
+  <div id="cookie-consent-root"></div>
 
   <script>window.SITE_BASE = '<?= \app\service\TenantContext::base() ?>';</script>
   <script src="<?= asset('/static/vendor/react.production.min.js') ?>"></script>
@@ -19,7 +21,8 @@
   <script src="<?= asset('/static/vendor/emotion-react.umd.min.js') ?>"></script>
   <script src="<?= asset('/static/vendor/emotion-styled.umd.min.js') ?>"></script>
   <script src="<?= asset('/static/vendor/material-ui.production.min.js') ?>"></script>
-  <script src="<?= asset('/static/vendor/babel.min.js') ?>"></script>
-  <script type="text/babel" data-presets="react" src="<?= asset('/static/js/app.jsx') ?>"></script>
+  <!-- v5.33.0：下面这些 js 是发布时用 node scripts/build_js.js 预编译出来的，改了 .jsx 一定要重新编译并核对（--check），浏览器里不再跑 Babel -->
+  <script src="<?= asset('/static/js/cookie-consent.js') ?>"></script>
+  <script src="<?= asset('/static/js/app.js') ?>"></script>
 </body>
 </html>

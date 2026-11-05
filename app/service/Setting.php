@@ -40,6 +40,17 @@ class Setting
         return self::$cache;
     }
 
+    /**
+     * v5.36.0：按租户直读一个键，不走进程内缓存。
+     * 定时提醒/机器人这类一次扫很多队的路径必须用它 —— Setting::$cache 记的是当前请求那个租户。
+     */
+    public static function getFor(int $tenantId, string $key, string $default = ''): string
+    {
+        $v = Db::name('settings')->where('tenant_id', $tenantId)
+            ->where('key', $key)->value('value');
+        return $v === null ? $default : (string)$v;
+    }
+
     // ---------- v5.1.0：平台级设置（tenant_id=0，与租户缓存隔离） ----------
 
     public static function getPlatform(string $key, string $default = ''): string

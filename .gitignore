@@ -31,3 +31,35 @@ Thumbs.db
 .idea/
 .vscode/
 node_modules/
+
+# ---- 发布仓库不包含的内容（安装/升级说明中提到的文件请另行索取） ----
+/_superseded_v5.17.0/
+
+# 增量升级 SQL（老站热更用；全新安装只用 game_team.sql 系列）
+/database/upgrade_*.sql
+/database/game_team_upgrade_*.sql
+/database/fix_*.sql
+
+# 交付包与证书续签产物
+*.zip
+/public/.well-known/
+
+# 内部文档
+/FIXES.md
+/交接-游戏战队系统-从构思到交付-流程手册.md
+/功能规划_六项候选功能.md
+/UI设计委托_战队对外公示页.md
+/多QQ机器人功能说明.md
+/战绩信息API接口文档.md
+
+# 上游模板遗留的 CI 配置
+/.travis.yml
+
+# Android 壳工程：构建产物与本机的签名凭据不入库
+/android-shell/local.properties
+/android-shell/keystore.properties
+/android-shell/release.keystore
+/android-shell/.gradle/
+/android-shell/build/
+/android-shell/app/build/
+*.apk

@@ -6,8 +6,8 @@
 use app\model\User;
 use think\facade\Db;
 
-// 全局前端资源版本号（v3.9.3）：每次发版改一次，配合 asset() 强制浏览器刷新 JS/CSS
-define('ASSET_BUILD', '5.7.1');
+// 全局前端资源版本号（v5.11.0）：每次发版改一次，配合 asset() 强制浏览器刷新 JS/CSS
+define('ASSET_BUILD', '5.36.34');
 
 /**
  * API 成功响应
@@ -153,7 +153,9 @@ function admin_perm_defs(): array
         'race'         => '撞车时间',
         'custom_race'  => '自建房比赛日程',
         'image_review' => '图片审核',
-        'ip_ban'       => 'IP封禁',
+        // v5.15.0：IP 封禁不再作为可分配权限键。blocked_ips 是全平台共用一张表，
+        // 任何战队挂了这根键就能封掉别队成员的 IP、或解掉别队/系统自动下的封禁，
+        // 三个入口因此一律只认真超管（内置 admin / 本队站长），旧授权里的残留键不再生效。
         'multi'        => '多账户检测',
         'global_mute'  => '全局禁言',
         'role_tag'     => '职责标签',
@@ -165,6 +167,11 @@ function admin_perm_defs(): array
         'vote'         => '投票管理',        // v5.6.0
         'training'     => '训练赛管理',      // v5.6.0
         'lottery'      => '抽奖管理',        // v5.7.0
+        'bot'          => 'QQ机器人',        // v5.8.0：群绑定/解绑/成员绑定名单
+        'stats'        => '战绩信息',        // v5.11.0：成员战绩查看
+        'login_log'    => '登录日志',        // v5.17.0：管理员登录日志与新归属地提醒（队长恒可见）
+        'chat_report'  => '私聊开关',        // v5.19.0 建的是私聊治理；v5.30.1 治理整体搬去平台侧，v5.32.0 大厅下线，这一键只剩「本站开不开私聊」
+        'showcase'     => '对外展示页',      // v5.20.0：编辑本站对外展示页 + 处理访客投稿/入队意向（队长恒可见）
     ];
 }
 
@@ -269,6 +276,24 @@ function mask_qq(string $qq): string
 }
 
 /**
+ * 成员显示名（v5.19.0 抽到公共层）：有昵称用昵称，没昵称只能脱敏，全员可见的名单一律不带完整 QQ 号。
+ * 仪表盘在线名单与聊天室/私聊的在线人数必须同一份口径，两处各写一遍迟早漂。
+ */
+function user_display_name($u): string
+{
+    // 模型对象与 Db::name() 出来的数组都要能吃（跨队那几处拿的是数组，见 v5.30.1）
+    $pick = static function ($row, string $k) {
+        return is_array($row) ? ($row[$k] ?? '') : ($row->$k ?? '');
+    };
+    $nick = trim((string)$pick($u, 'nickname'));
+    if ($nick !== '') {
+        return $nick;
+    }
+    $acct = (string)$pick($u, 'username');
+    return strpos($acct, '@') !== false ? substr($acct, 0, 1) . '***' : mask_qq($acct);
+}
+
+/**
  * 写管理操作日志（v3.7：记录哪个管理员做了什么操作）
  * 静默失败：日志写不进去不影响主业务
  */
@@ -279,9 +304,17 @@ function admin_log(string $action, string $detail = ''): void
         if (!$user) {
             return;
         }
+        $adminName = ($user->nickname ?: '') . '(' . $user->username . ')';
+        // v5.36.13：平台协作模式下的操作以站长身份执行，但日志必须一眼看出是谁在操作；
+        // 站长在「管理中心 → 操作日志」里能按「平台协作」检索到每一步
+        $supportLabel = \app\service\Support::auditIdentity();
+        if ($supportLabel !== null) {
+            $adminName = '平台协作 · ' . $supportLabel;
+            $detail    = '[平台协作] ' . $detail;
+        }
         \app\model\AdminLog::create([
             'admin_id'   => $user->id,
-            'admin_name' => ($user->nickname ?: '') . '(' . $user->username . ')',
+            'admin_name' => $adminName,
             'action'     => $action,
             'detail'     => mb_substr($detail, 0, 300),
         ]);
@@ -345,7 +378,12 @@ function client_ip(): string
     // REMOTE_ADDR 是可信代理（CDN 节点）：从右往左剥掉可信代理，取第一个不可信 IP；
     // 链上剩余全部是可信代理时说明链被伪造/残缺，退回 REMOTE_ADDR 不采信
     $xff = trim((string)($_SERVER['HTTP_X_FORWARDED_FOR'] ?? ''));
-    $chain = $xff === '' ? [] : array_values(array_filter(array_map('trim', explode(',', $xff)), 'filter_var'));
+    // v5.15.0(S5)：链上每一段都要真正按 IP 校验。旧写法把 'filter_var' 直接交给
+    // array_filter 当回调，只收到一个实参 ⇒ 跑的是 FILTER_UNSAFE_RAW，等于不校验，
+    // 非法串会被当成「客户端 IP」一路带进限流计数、封禁表和操作日志
+    $chain = $xff === '' ? [] : array_values(array_filter(array_map('trim', explode(',', $xff)), function ($v) {
+        return filter_var($v, FILTER_VALIDATE_IP) !== false;
+    }));
     for ($i = count($chain) - 1; $i >= 0; $i--) {
         if (!ip_in_trusted($chain[$i], $proxies)) {
             return $chain[$i];
@@ -368,7 +406,9 @@ function trusted_proxies(): array
             }
             if (strpos($item, '/') !== false) {
                 [$cidrIp, $bits] = explode('/', $item, 2);
-                if (filter_var($cidrIp, FILTER_VALIDATE_IP) && ctype_digit($bits)) {
+                // v5.15.0(S5)：前缀短于 /8 一律不收。ip_in_trusted() 对 /0 恒返回 true，
+                // 误配一条 0.0.0.0/0 就等于把全部来访 IP 当可信代理，XFF 从此可任意伪造
+                if (filter_var($cidrIp, FILTER_VALIDATE_IP) && ctype_digit($bits) && (int)$bits >= 8) {
                     $list[] = ['cidr', $cidrIp, (int)$bits];
                 }
             } elseif (filter_var($item, FILTER_VALIDATE_IP)) {
@@ -416,6 +456,83 @@ function ip_in_trusted(string $ip, array $proxies): bool
 }
 
 /**
+ * 限流计数原子自增（v5.15.0(H4)）
+ * 原先各处都是 Cache::get 读出来 +1 再 Cache::set，三步之间没有任何互斥、file 驱动也没锁，
+ * 并发批量请求可以把计数反复写在同一个旧值上——「同 IP 失败 5 次」「同账号 10 次」这类
+ * 阈值因此能被脚本一次性穿透。这里用一把 flock 把读—改—写串起来，
+ * 同一主机上的 php-fpm/Apache 多进程与 CLI 都会互斥（跨主机需共享存储，与既有 file 缓存同限制）。
+ * 返回自增后的计数；锁不可用时退回非原子的读改写，绝不阻断业务主流程。
+ */
+function rate_bump(string $key, int $ttl): int
+{
+    $fh      = null;
+    $lockDir = rtrim(runtime_path(), '/\\') . DIRECTORY_SEPARATOR . 'lock';
+    if (!is_dir($lockDir)) {
+        @mkdir($lockDir, 0775, true);
+    }
+    if (is_dir($lockDir)) {
+        $fh = @fopen($lockDir . DIRECTORY_SEPARATOR . 'rate_' . md5($key) . '.lock', 'c');
+        if ($fh) {
+            @flock($fh, LOCK_EX);
+        }
+    }
+    try {
+        $n = (int)\think\facade\Cache::get($key, 0) + 1;
+        \think\facade\Cache::set($key, $n, $ttl);
+        return $n;
+    } finally {
+        if ($fh) {
+            @flock($fh, LOCK_UN);
+            @fclose($fh);
+        }
+    }
+}
+
+/**
+ * 出站地址安全检查（v5.15.0(L1)）：约战中心 / 赛事站这类「站点服务器自己去访问」的地址
+ * 只校验 ^https?:// 是不够的——战队超管填 127.0.0.1:6379 或内网段就能把本站当跳板。
+ * 这里拒绝回环 / 私有 / 链路本地 / 保留地址与非 HTTP 端口。返回 null 表示可用。
+ * 注：这里只做保存时的解析校验，防不住 DNS 重绑定；如需彻底收口请在出站层加代理白名单。
+ */
+function safe_outbound_url(string $url): ?string
+{
+    $parts = parse_url($url);
+    if ($parts === false || empty($parts['host'])) {
+        return '地址无法解析';
+    }
+    $scheme = strtolower((string)($parts['scheme'] ?? ''));
+    if (!in_array($scheme, ['http', 'https'], true)) {
+        return '仅支持 http/https 地址';
+    }
+    $port = (int)($parts['port'] ?? ($scheme === 'https' ? 443 : 80));
+    if (!in_array($port, [80, 443, 8080, 8443], true)) {
+        return '仅允许 80/443/8080/8443 端口';
+    }
+    $host = strtolower((string)$parts['host']);
+    if (isset($host[0]) && $host[0] === '[') {
+        $host = trim($host, '[]');
+    }
+    $ips = [];
+    if (filter_var($host, FILTER_VALIDATE_IP)) {
+        $ips[] = $host;
+    } else {
+        $resolved = @gethostbynamel($host);   // 只取 A 记录：拿不到公网地址的一律按不可用处理
+        if ($resolved) {
+            $ips = $resolved;
+        }
+    }
+    if (!$ips) {
+        return '地址解析不到可用的 IPv4，请改用 IP 或检查域名';
+    }
+    foreach ($ips as $ip) {
+        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+            return '不允许指向内网或保留地址';
+        }
+    }
+    return null;
+}
+
+/**
  * 渲染视图文件（view/ 目录下的模板）
  */
 function render_page(string $template, array $vars = [])
@@ -436,10 +553,12 @@ function render_page(string $template, array $vars = [])
 // （stealth_tokens 表，记录签发人/租户/有效期），校验只认库内登记——
 // 即使代码开源泄露也无法伪造，且全部签发记录可审计。
 // v5.7.1(M2)：URL 上的 ?_sv= 令牌仅作一次性兑票——ResolveTenant 校验后立即作废，
-// 换发 2 小时 HttpOnly cookie（同样落库登记），令牌不再出现在浏览器历史/日志/Referer 里。
+// 换发 30 分钟 HttpOnly cookie（同样落库登记），令牌不再出现在浏览器历史/日志/Referer 里。
+// v5.16.0：TTL 从 2 小时收到 30 分钟，且会话登记保留签发人；巡查读取全部走 /api/inspect
+// 白名单通道并逐次落审计（见 app/middleware/StealthRead.php），平台超管可随时一键撤销。
 
 /** 签发隐身入口 token：随机串 + 落库登记（绑定租户与签发人，仅平台超管可调用） */
-function stealth_make_token(int $tenantId, string $slug, int $createdBy, int $ttl = 7200): string
+function stealth_make_token(int $tenantId, string $slug, int $createdBy, int $ttl = 1800): string
 {
     $token = bin2hex(random_bytes(24));
     Db::name('stealth_tokens')->insert([
@@ -474,29 +593,88 @@ function stealth_verify_token(int $tenantId, string $token): bool
     return true;
 }
 
-/** v5.7.1(M2)：作废一枚已兑现的 URL 令牌（一次性：兑票后立即删除登记） */
-function stealth_consume_token(int $tenantId, string $token): void
+/**
+ * v5.15.0(S-L4)：一次性兑票的原子版本——把「校验」与「作废」合成一条带条件的 DELETE，
+ * 抢到行（affected>0）才算兑票成功。原先 stealth_verify_token() + stealth_consume_token()
+ * 是两条 SQL，中间的时间窗里并发第二个请求也能校验通过，一枚 URL 能兑出两个巡查会话。
+ */
+function stealth_take_token(int $tenantId, string $token): bool
 {
+    if (!preg_match('/^[a-f0-9]{48}$/', $token)) {
+        return false;
+    }
     try {
-        Db::name('stealth_tokens')
+        $n = Db::name('stealth_tokens')
             ->where('tenant_id', $tenantId)
             ->where('token_hash', hash('sha256', $token))
+            ->where('expires_at', '>', date('Y-m-d H:i:s'))
             ->delete();
+        return $n > 0;
     } catch (\Throwable $e) {
-        // 删除失败不影响兑票主流程（最坏情况令牌可再次兑票一次，2 小时后仍过期）
+        return false;
     }
 }
 
-/** v5.7.1(M2)：登记兑票换发的巡查会话 secret（复用 stealth_tokens 表，2 小时有效） */
-function stealth_register_session(int $tenantId, string $secret): void
+/**
+ * v5.7.1(M2)：登记兑票换发的巡查会话 secret（复用 stealth_tokens 表，30 分钟有效）
+ * v5.16.0：created_by 记签发这枚入口的平台超管 id —— 巡查台账的每一行审计都要能说清「是谁的授权」，
+ * 原先会话行的 created_by 恒为 0（签发人只存在于已作废的原令牌行里），撤销与复盘都无从对齐。
+ */
+function stealth_register_session(int $tenantId, string $secret, int $issuer = 0): void
 {
     Db::name('stealth_tokens')->insert([
         'tenant_id'  => $tenantId,
         'token_hash' => hash('sha256', $secret),
-        'created_by' => 0,   // 0 = 兑票自动生成（签发人记录在原令牌行，已作废）
+        'created_by' => $issuer,
         'created_at' => date('Y-m-d H:i:s'),
-        'expires_at' => date('Y-m-d H:i:s', time() + 7200),
+        'expires_at' => date('Y-m-d H:i:s', time() + 1800),
     ]);
+}
+
+/**
+ * v5.16.0：查一枚未兑票令牌的签发人（只读，供兑票时把授权人带到会话登记上）。
+ * 与 stealth_take_token() 分开是因为那条是「校验即作废」的原子 DELETE，
+ * 令牌行删掉后签发人就没处可查了；这里的读不参与鉴权，读到 0 只影响审计标签。
+ */
+function stealth_token_issuer(int $tenantId, string $token): int
+{
+    if (!preg_match('/^[a-f0-9]{48}$/', $token)) {
+        return 0;
+    }
+    try {
+        $n = Db::name('stealth_tokens')
+            ->where('tenant_id', $tenantId)
+            ->where('token_hash', hash('sha256', $token))
+            ->value('created_by');
+        return (int)$n;
+    } catch (\Throwable $e) {
+        return 0;
+    }
+}
+
+/**
+ * v5.16.0：查当前巡查会话的登记（签发人 + 到期时间），供审计打标与「一键撤销」定位。
+ * 命中不到（已过期/已被撤销）返回 null——调用方按「无授权可追溯」处理，不放宽任何权限。
+ */
+function stealth_session_info(int $tenantId, string $secret): ?array
+{
+    if ($tenantId <= 0 || !preg_match('/^[a-f0-9]{48}$/', $secret)) {
+        return null;
+    }
+    try {
+        $row = Db::name('stealth_tokens')
+            ->where('tenant_id', $tenantId)
+            ->where('token_hash', hash('sha256', $secret))
+            ->field('created_by, created_at, expires_at')
+            ->find();
+    } catch (\Throwable $e) {
+        return null;
+    }
+    return $row ? [
+        'created_by' => (int)($row['created_by'] ?? 0),
+        'created_at' => (string)($row['created_at'] ?? ''),
+        'expires_at' => (string)($row['expires_at'] ?? ''),
+    ] : null;
 }
 
 /** v5.7.1(M2)：巡查会话 cookie 名（path 按租户目录隔离，各战队互不串） */
@@ -516,10 +694,122 @@ function stealth_exit(): void
                 ->where('token_hash', hash('sha256', $secret))
                 ->delete();
         } catch (\Throwable $e) {
-            // 静默：cookie 清掉即可，库内登记最迟 2 小时过期
+            // 静默：cookie 清掉即可，库内登记最迟 30 分钟过期
         }
     }
     \think\facade\Cookie::delete(stealth_cookie_name());
+}
+
+// ---------- 管理员登录日志与新归属地提醒（v5.17.0） ----------
+// 口径（与用户确认）：只记 role=admin 的登录（队长与副管理员），成员登录不写这张表；
+// 失败尝试只在「目标账号存在且是管理员」时记录，撞库枚举不存在的 QQ 号不会把日志刷满；
+// 免登录 cookie 静默恢复单独标 via=cookie——令牌被拷走时这是最常见的一种登录形态。
+// 提醒：成功登录的归属地与该账号上一条成功记录不同 ⇒ flagged=1，当事人一定看得见自己的那条，
+//      队长/持 login_log 权限的副管理还能看到全队的；已读游标按人存（users.login_alert_seen_at）。
+
+/** 每支战队最多保留的登录日志行数（写入时顺带裁剪，站点没有 cron 可用） */
+const LOGIN_LOG_KEEP = 5000;
+
+/**
+ * 判断本次登录是不是"新归属地"：必须在该账号本次记录落库之前调用。
+ * 任一侧归属地为空（查询失败/内网）都不作判定，比对不出就别说吓人的话。
+ */
+function login_log_region_changed(int $tenantId, int $userId, string $region): bool
+{
+    if ($tenantId <= \app\service\TenantContext::PLATFORM_ID || $userId <= 0 || $region === '') {
+        return false;
+    }
+    try {
+        $prev = Db::name('login_logs')
+            ->where('tenant_id', $tenantId)
+            ->where('user_id', $userId)
+            ->where('result', 'success')
+            ->where('region', '<>', '')
+            ->order('id', 'desc')
+            ->value('region');
+    } catch (\Throwable $e) {
+        return false;
+    }
+    return $prev !== null && $prev !== '' && (string)$prev !== $region;
+}
+
+/** 写一行登录日志（含超限裁剪）；失败静默，绝不阻断登录主流程 */
+function login_log_write(int $tenantId, int $userId, string $username, string $ip, string $region, string $via, string $result, bool $flagged): void
+{
+    if ($tenantId <= \app\service\TenantContext::PLATFORM_ID) {
+        return;   // 平台侧另有 platform_login_logs
+    }
+    try {
+        Db::name('login_logs')->insert([
+            'tenant_id'  => $tenantId,
+            'user_id'    => $userId,
+            'username'   => mb_substr($username, 0, 32),
+            'ip'         => mb_substr($ip, 0, 45),
+            'region'     => mb_substr($region, 0, 128),
+            'ua'         => mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 200),
+            'via'        => $via,
+            'result'     => $result,
+            'flagged'    => $flagged ? 1 : 0,
+            'created_at' => date('Y-m-d H:i:s'),
+        ]);
+        // 裁剪：只留最近 LOGIN_LOG_KEEP 行（超出才多跑两条 SQL）。
+        // 用「取最旧的 N 个 id 再 whereIn 删」而不是 limit+offset——
+        // ThinkPHP 的 value() 会忽略 offset()，靠 offset 定位第 5000 行会静默失灵
+        $over = (int)Db::name('login_logs')->where('tenant_id', $tenantId)->count() - LOGIN_LOG_KEEP;
+        if ($over > 0) {
+            $old = Db::name('login_logs')->where('tenant_id', $tenantId)
+                ->order('id', 'asc')->limit($over)->column('id');
+            if ($old) {
+                Db::name('login_logs')->where('tenant_id', $tenantId)->whereIn('id', $old)->delete();
+            }
+        }
+    } catch (\Throwable $e) {
+        // 登录日志表异常不影响登录
+    }
+}
+
+/**
+ * 未读的新归属地提醒数。
+ * $userId > 0 时只统计该账号自己的（当事人不需要任何权限），
+ * 传 null 则统计整支战队（调用方必须已过权限守卫）。
+ */
+function login_alert_unread(int $tenantId, ?string $seenAt, int $userId = 0): int
+{
+    if ($tenantId <= \app\service\TenantContext::PLATFORM_ID) {
+        return 0;
+    }
+    try {
+        $q = Db::name('login_logs')
+            ->where('tenant_id', $tenantId)
+            ->where('flagged', 1)
+            ->where('result', 'success');
+        if ($userId > 0) {
+            $q->where('user_id', $userId);
+        }
+        if ($seenAt !== null && $seenAt !== '') {
+            $q->where('created_at', '>', $seenAt);
+        }
+        return (int)$q->count();
+    } catch (\Throwable $e) {
+        return 0;
+    }
+}
+
+/** 最近若干条新归属地提醒（详情列表用，口径同 login_alert_unread） */
+function login_alert_rows(int $tenantId, int $limit = 10, int $userId = 0): array
+{
+    if ($tenantId <= \app\service\TenantContext::PLATFORM_ID) {
+        return [];
+    }
+    try {
+        $q = Db::name('login_logs')->where('tenant_id', $tenantId)->where('flagged', 1);
+        if ($userId > 0) {
+            $q->where('user_id', $userId);
+        }
+        return $q->order('id', 'desc')->limit($limit)->select()->toArray();
+    } catch (\Throwable $e) {
+        return [];
+    }
 }
 
 // ---------- 职责标签（v5.3.0） ----------
@@ -634,13 +924,62 @@ function remember_issue(int $userId): string
     }
 }
 
+/** 用同一枚令牌值重写 cookie，只负责把浏览器侧的 7 天往后推（不新发令牌） */
+function remember_renew_cookie(int $userId, string $token): void
+{
+    try {
+        $path = \app\service\TenantContext::base();
+        \think\facade\Cookie::set(remember_cookie_name(), $userId . '.' . $token, [
+            'expire'   => 7 * 86400,
+            'path'     => $path === '' ? '/' : $path,
+            'httponly' => true,
+            'samesite' => 'lax',
+        ]);
+    } catch (\Throwable $e) {
+        // 静默：续期失败不影响本次请求已经恢复出来的登录态
+    }
+}
+
+/**
+ * 只撤销"当前这台设备"的免登录令牌（v5.19.0）：不勾「记住我」登录时用。
+ * 原先这里走的是 remember_clear_user()，会把这个账号在本队的**全部**令牌删掉，
+ * 于是"手机上登录一次没勾选"就把电脑端已签发的 7 天免登录一起踢了。
+ * 全设备失效只留给退出登录 / 改密 / 封禁 / 删号。
+ */
+function remember_revoke_current(int $userId): void
+{
+    try {
+        $raw = (string)\think\facade\Cookie::get(remember_cookie_name(), '');
+        if ($raw !== '' && substr_count($raw, '.') === 1) {
+            [$uidStr, $token] = explode('.', $raw, 2);
+            if ((int)$uidStr === $userId && preg_match('/^[a-f0-9]{48}$/', $token)) {
+                Db::name('remember_tokens')
+                    ->where('tenant_id', \app\service\TenantContext::id())
+                    ->where('user_id', $userId)
+                    ->where('token_hash', hash('sha256', $token))
+                    ->delete();
+            }
+        }
+    } catch (\Throwable $e) {
+        // 静默：撤销失败也要把本机 cookie 清掉，别留一枚没人认的令牌在浏览器里
+    }
+    \think\facade\Cookie::delete(remember_cookie_name());
+}
+
 /** 删除某用户全部免登录令牌并清 cookie（退出/改密码/删号时调用） */
 function remember_clear_user(int $userId): void
 {
     try {
-        Db::name('remember_tokens')
-            ->where('tenant_id', \app\service\TenantContext::id())
-            ->where('user_id', $userId)->delete();
+        $tid = \app\service\TenantContext::id();
+        $q   = Db::name('remember_tokens')->where('user_id', $userId);
+        // v5.15.0(S1)：入驻平台改本队超管密码时 TenantContext::id() 是 PLATFORM_ID，
+        // 而令牌是按真实租户 id 签发的——再按当前上下文 id 过滤会一行都删不掉，
+        // 「改密踢线」对 7 天免登录 cookie 因此失效（免登录恢复还会重新盖上密码纪元）。
+        // 平台上下文一律跨租户清掉该用户的全部令牌。
+        if ($tid > \app\service\TenantContext::PLATFORM_ID) {
+            $q = $q->where('tenant_id', $tid);
+        }
+        $q->delete();
     } catch (\Throwable $e) {
         // 静默：令牌清理失败不影响主流程
     }
@@ -648,10 +987,12 @@ function remember_clear_user(int $userId): void
 }
 
 /**
- * 凭免登录 cookie 恢复会话（令牌轮换制），返回恢复出的用户 ID 或 null。
+ * 凭免登录 cookie 恢复会话，返回恢复出的用户 ID 或 null。
  * cookie 值 = 用户ID.令牌原值；只认库内登记的 sha256，未过期且账号正常才恢复；
- * 命中后删旧行发新令牌（防令牌被离线重放），并换新 session ID 防固定。
- * 任何一步失败都清 cookie 按未登录处理，不阻断请求。
+ * 命中只做两件事：把有效期往后推 7 天、用同一枚令牌值重写 cookie（让浏览器侧也续期），
+ * 再加一次换新 session ID 防固定。令牌本身不轮换 —— 一次页面加载会并发多个请求，
+ * 都带同一枚 cookie，轮换会让后到的请求误判成"令牌无效"进而删掉浏览器刚拿到的好 cookie。
+ * 查不到登记行/已过期/账号不可用才清 cookie 按未登录处理（那是真的被撤销了），不阻断请求。
  * （AuthCheck / AdminCheck 共用：会话过期后访问任一受保护接口都能静默恢复）
  */
 function remember_try_login(): ?int
@@ -691,14 +1032,101 @@ function remember_try_login(): ?int
         return null;
     }
 
-    // 令牌轮换：旧令牌一次性作废，重发新令牌续期 7 天（原流程同样落 cookie）
-    Db::name('remember_tokens')->where('id', $row['id'])->delete();
-    remember_issue($uid);
+    // v5.19.0 修「勾了记住我却还要重新登录」：令牌不再生一次性，只滚动续期。
+    // 原先每次恢复都是"删旧行 + 发新令牌"，而一次页面加载会并发好几个受保护请求，
+    // 它们带的是同一枚旧 cookie —— 第一个请求把令牌换掉，后面几个查不到就走到
+    // 上面那个"清 cookie"分支，把浏览器刚收到的新 cookie 一起抹了。免登录就是这么没的。
+    // 现在同一枚令牌可以反复用来恢复（每次把有效期往后推 7 天），
+    // 失效只由退出登录 / 改密 / 封禁 / 删号触发，与并发无关。
+    Db::name('remember_tokens')->where('id', $row['id'])->update(
+        ['expires_at' => date('Y-m-d H:i:s', time() + 7 * 86400)]);
+    remember_renew_cookie($uid, $token);
 
     // 恢复会话（换新 session ID 防固定）
     session('user_id', $uid);
     // v5.7.1(H3)：免登录恢复同样盖上当前密码纪元
     session('session_epoch', (int)$user->session_epoch);
     \think\facade\Session::setId(bin2hex(random_bytes(16)));
+
+    // v5.17.0：管理员凭免登录 cookie 静默恢复单独记一条（via=cookie）——
+    // 令牌被拷走时攻击者走的正是这条路，归属地变化同样进提醒口径。
+    // 归属地能复用 users.reg_region 就不查外网（这条在每个会话恢复时都会走）
+    if ($user->role === 'admin') {
+        $tid    = \app\service\TenantContext::id();
+        $ip     = client_ip();
+        $region = ((string)$user->reg_ip === $ip && (string)$user->reg_region !== '')
+            ? (string)$user->reg_region : \app\service\IpRegion::lookup($ip);
+        login_log_write($tid, $uid, (string)$user->username, $ip, $region, 'cookie', 'success',
+            login_log_region_changed($tid, $uid, $region));
+    }
     return $uid;
+}
+
+// ---------- QQ 机器人回调鉴权（v5.8.0 引入，v5.15.0 收口，v5.28.0 只剩战队那一份） ----------
+// 官方只对 URL 校验（op:13）要求应答签名，事件推送（op:0）没有入站验签头，
+// 所以「回调地址里带的随机密钥」就是唯一的来源凭据：每个战队机器人的密钥存在
+// bot_tenant_bots.callback_key，由管理中心那一页发给站长去 QQ 后台填。
+// v5.28.0：平台公共机器人下线，原来那份平台级密钥与无密钥旧地址一并撤掉。
+
+// ---------- 成员战绩（v5.11.0） ----------
+// 战绩由外部项目经开放 API 一次性同步，本站只读展示：仅管理员（stats 权限）与本人可见。
+// 下面这份字段定义是唯一口径——开放接口按它校验取值、管理端按它做排序白名单、
+// 前端表头与小数位也直接读接口返回的它，改字段只改这一处。
+
+/** 战绩指标字段定义：列名 => 显示名/类型/上限/后缀 */
+function player_stat_defs(): array
+{
+    return [
+        'matches'           => ['label' => '场次',        'type' => 'int',   'max' => 1000000],
+        'win_rate'          => ['label' => '胜率',        'type' => 'rate'],
+        'avg_score'         => ['label' => '平均评分',    'type' => 'num',   'max' => 99999],
+        'kd'                => ['label' => 'KD',          'type' => 'ratio', 'max' => 99999],
+        'score_per_match'   => ['label' => '场均得分',    'type' => 'num',   'max' => 999999],
+        'score_per_minute'  => ['label' => '分均得分',    'type' => 'ratio', 'max' => 99999],
+        'kills'             => ['label' => '总击杀',      'type' => 'int',   'max' => 99999999],
+        'deaths'            => ['label' => '总死亡',      'type' => 'int',   'max' => 99999999],
+        'kda'               => ['label' => 'KDA',         'type' => 'ratio', 'max' => 99999],
+        'kills_per_match'   => ['label' => '场均击杀',    'type' => 'ratio', 'max' => 9999],
+        'assists_per_match' => ['label' => '场均助攻',    'type' => 'ratio', 'max' => 9999],
+        'sites_per_match'   => ['label' => '场均站点',    'type' => 'ratio', 'max' => 9999],
+        'healing_per_match' => ['label' => '场均治疗',    'type' => 'num',   'max' => 99999999],
+        'revives'           => ['label' => '救治',        'type' => 'int',   'max' => 99999999],
+        'best_match_kills'  => ['label' => '单局最高击杀', 'type' => 'int',   'max' => 9999],
+        'kill_duration'     => ['label' => '击杀时长',    'type' => 'int',   'max' => 99999999, 'unit' => '秒'],
+        'quit_rate'         => ['label' => '中途退出率',  'type' => 'rate'],
+        'max_win_streak'    => ['label' => '最长连胜',    'type' => 'int',   'max' => 9999],
+        'win_rate_last10'   => ['label' => '近10局胜率',  'type' => 'rate'],
+        'win_rate_last30'   => ['label' => '近30局胜率',  'type' => 'rate'],
+    ];
+}
+
+/** 字段类型 → 小数位（int=整数；rate 固定百分比；ratio/num 保留两位） */
+function player_stat_decimals(string $type): int
+{
+    return $type === 'int' ? 0 : 2;
+}
+
+// ---------- 登录页配图（v5.12.0：战队可自定义，未设置时用内置海报） ----------
+
+/** 内置默认海报；auth.jsx 里的回落值与此一致 */
+function login_poster_default(): string
+{
+    return '/static/img/login-poster.webp';
+}
+
+/**
+ * 战队自定义海报：只认 ImageUpload 落在 posters 目录里的文件名形态。
+ * 库里的值被改坏或指向别处时一律按「未设置」处理——登录页不能因为一张坏图变成裂图。
+ */
+function login_poster_custom(): string
+{
+    $v  = trim((string)\app\service\Setting::get('login_poster', ''));
+    $ok = preg_match('#^/storage/uploads/posters/\d{8}/[a-f0-9]{32}\.(jpg|jpeg|png|gif|webp)$#', $v);
+    return $ok ? $v : '';
+}
+
+/** 登录 / 注册 / 找回密码页当前该显示哪张海报 */
+function login_poster_url(): string
+{
+    return login_poster_custom() ?: login_poster_default();
 }

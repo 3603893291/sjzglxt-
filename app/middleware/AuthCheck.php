@@ -50,6 +50,21 @@ class AuthCheck
             return api_err('账号密码已变更，请重新登录', 401, 401);
         }
 
+        // v5.36.13：平台协作会话逐请求校验（授权撤销 / 到期 / 站长变更 / 平台账号失效都会立刻断开）
+        if (($supportErr = \app\service\Support::enforce()) !== null) {
+            return api_err($supportErr, 401, 401);
+        }
+        $supportMode = \app\service\Support::isActive();
+        if ($supportMode) {
+            // 协作只用于管理中心：不允许以站长身份发聊天、改个人资料、绑通行证、上传战绩
+            $path = '/' . trim($request->pathinfo(), '/');
+            if (!\app\service\Support::pathAllowed($request->method(), $path)) {
+                return api_err('平台协作模式仅可操作管理中心', 403, 403);
+            }
+            // 协作不替站长刷“最后活跃”，避免在线状态失真
+            return $next($request);
+        }
+
         // 刷新最后活跃时间（60 秒内只写一次，降低写库频率）
         $activeRefresh = true;
         if ($user->last_active_at) {
@@ -58,6 +73,29 @@ class AuthCheck
         if ($activeRefresh) {
             Db::name('users')->where('id', $user->id)
                 ->update(['last_active_at' => date('Y-m-d H:i:s')]);
+        }
+
+        // v5.33.0：有人打开站点就顺路查一次到点的赛前提醒（按队 60 秒限频，与上面那次写同样省）。
+        // 提醒只是附属动作，出任何岔子都不许把这次请求带下水——所以整个包在 try 里。
+        try {
+            \app\service\EventReminder::tickLazy((int)$user->tenant_id);
+        } catch (\Throwable $e) {
+            \think\facade\Log::warning('[EventReminder] ' . $e->getMessage());
+        }
+
+        // v5.36.14：有人打开站点也顺路查一次到点的 AI 主动发言（每队 5 分钟限频）。
+        // 和提醒一样，任何异常都不许拖垮本次请求。
+        try {
+            \app\service\AiChat::tickLazy((int)$user->tenant_id);
+        } catch (\Throwable $e) {
+            \think\facade\Log::warning('[AiChat] ' . $e->getMessage());
+        }
+
+        // v5.36.34：比赛日集合点名——到点前顺路往 QQ 群喊一次（按队 60 秒限频，一场只喊一次）。
+        try {
+            \app\service\RollCall::tickLazy((int)$user->tenant_id);
+        } catch (\Throwable $e) {
+            \think\facade\Log::warning('[RollCall] ' . $e->getMessage());
         }
 
         return $next($request);

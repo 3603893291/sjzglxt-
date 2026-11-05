@@ -105,6 +105,8 @@ class DataTransfer
             'images'            => ['reviewed_at'],
             'gun_codes'         => [],
             'gun_code_comments' => [],
+            // v5.19.0：私聊(chat_dm_messages)刻意不在导出清单里——导出包会落到站长手里，
+            // 而私聊正文按约定连管理员都要挂举报才看得到，不该从导出这条路漏出去
             'chat_messages'     => [],
             'announcements'     => [],
             'race_events'       => [],
@@ -317,7 +319,16 @@ class DataTransfer
             if ($content === false || file_put_contents($abs, $content) === false) {
                 return '';
             }
-            return '/storage/uploads/' . str_replace(DIRECTORY_SEPARATOR, '/', $rel);
+            // v5.36.33：撞名时上面把 $abs 换了后缀名，回写的就必须是真正落盘的那条路径。
+            // 早先这里用的是没加后缀的 $rel —— 行会指向别队同名文件，而自己那份真副本没人引用、
+            // 也永远不会被「按引用删图」清掉。
+            $absWeb  = str_replace(DIRECTORY_SEPARATOR, '/', $abs);
+            $rootWeb = str_replace(DIRECTORY_SEPARATOR, '/', $publicRoot . DIRECTORY_SEPARATOR . 'storage'
+                . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR);
+            if (strpos($absWeb, $rootWeb) !== 0) {
+                return '';
+            }
+            return '/storage/uploads/' . substr($absWeb, strlen($rootWeb));
         };
 
         Db::startTrans();
@@ -328,6 +339,9 @@ class DataTransfer
             }
 
             // 1) 清场（保留入驻材料与当前站长账号）
+            // v5.36.33：先把这一批行引用的文件记下来 —— 清场只删行，不删行就会把这些文件
+            // 变成没人引用的孤儿（销毁也找不到它们）。提交之后按引用再清一遍。
+            $stale = TenantPurge::filesOf($tid);
             foreach (['gun_code_comments', 'gun_codes', 'chat_messages', 'images', 'guides',
                       'announcements', 'race_events', 'custom_race_events', 'teams'] as $table) {
                 Db::name($table)->where('tenant_id', $tid)->delete();
@@ -414,6 +428,9 @@ class DataTransfer
                     'title'       => (string)($r['title'] ?? ''),
                     'code'        => (string)($r['code'] ?? ''),
                     'description' => (string)($r['description'] ?? ''),
+                    // v5.26.0：旧导出包里没有这一项，或值不在这九个键里，都按未分类进
+                    'category'    => isset(\app\model\GunCode::CATEGORIES[(string)($r['category'] ?? '')])
+                        ? (string)$r['category'] : 'other',
                     'status'      => (string)($r['status'] ?? 'published'),
                     'created_at'  => (string)($r['created_at'] ?? date('Y-m-d H:i:s')),
                 ]);
@@ -443,12 +460,20 @@ class DataTransfer
                 ]);
             }
             foreach ((array)($data['announcements'] ?? []) as $r) {
+                // v5.36.34：定时与撤回这两列照原样搬。没到点的到新站还是没到点，
+                // 撤回过的不能在导入之后突然冒出来 —— 那等于队长撤掉的东西被我们替他重新发布了
+                $dt = static function ($v): ?string {
+                    $v = trim((string)$v);
+                    return preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/', $v) ? $v : null;
+                };
                 Db::name('announcements')->insert([
-                    'tenant_id'  => $tid,
-                    'title'      => (string)($r['title'] ?? ''),
-                    'content'    => (string)($r['content'] ?? ''),
-                    'image'      => $restoreFile((string)($r['image'] ?? '')),
-                    'created_at' => (string)($r['created_at'] ?? date('Y-m-d H:i:s')),
+                    'tenant_id'    => $tid,
+                    'title'        => (string)($r['title'] ?? ''),
+                    'content'      => (string)($r['content'] ?? ''),
+                    'image'        => $restoreFile((string)($r['image'] ?? '')),
+                    'scheduled_at' => $dt($r['scheduled_at'] ?? null),
+                    'revoked_at'   => $dt($r['revoked_at'] ?? null),
+                    'created_at'   => (string)($r['created_at'] ?? date('Y-m-d H:i:s')),
                 ]);
             }
             foreach ((['race_events' => 'race_events', 'custom_race_events' => 'custom_race_events']) as $src => $dst) {
@@ -495,6 +520,9 @@ class DataTransfer
 
             Db::commit();
             $zip->close();
+            // v5.36.33：换下来的旧文件按引用清一遍；别的队还在用的会留着，
+            // 走的是删除战队那同一份引用清单，两处口径不会各说各话
+            TenantPurge::dropUnreferenced($stale);
             return null;
         } catch (\Throwable $e) {
             Db::rollback();

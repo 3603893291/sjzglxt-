@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">战队助手</string>
+
+    <string name="entry_title_first">首次使用</string>
+    <string name="entry_title_settings">战队助手设置</string>
+    <string name="entry_title_settings_team">%1$s · 设置</string>
+    <string name="entry_subtitle_team">当前战队：%1$s\n地址：%2$s</string>
+    <string name="entry_subtitle">填写你的战队地址，之后打开 APP 直接进队。</string>
+    <string name="entry_url_label">战队地址</string>
+    <string name="entry_url_hint">例如 your-team.com，或 https://你的域名</string>
+    <string name="entry_zoom">页面缩放</string>
+    <string name="entry_zoom_value">当前 %1$d%%</string>
+    <string name="entry_notify">新消息提醒</string>
+    <string name="entry_notify_desc">通知栏会常驻一条提醒状态，换得后台定时检查，关掉它就完全不再提醒。查得越勤越费电；想灭屏也收得到，必须允许本应用忽略电池优化。</string>
+    <string name="entry_rate">检查频率</string>
+    <string name="entry_show_body">通知里显示消息内容</string>
+    <string name="entry_show_body_desc">关掉后只显示「收到 N 条新消息」，正文不在锁屏上露出。</string>
+    <string name="entry_enter">进入战队</string>
+    <string name="entry_error_url">地址看起来不对，请填战队站的域名或完整网址</string>
+    <string name="entry_footnote">提醒由 APP 自己按频率去站点查询，战队站点不需要为此改动任何东西。\n长时间收不到提醒时，请在手机设置里允许本应用自启动，并把它移出省电限制。</string>
+    <string name="entry_battery_cta">去系统设置允许后台运行</string>
+    <string name="entry_battery_hint">ColorOS / OriginOS 这类系统会自己冻结后台闹钟，收不到提醒多半是这里被限制了。进去后请允许「自启动」与「后台活动」，并把省电策略设为「不限制」。</string>
+
+    <string name="ongoing_running">提醒已开启</string>
+    <string name="ongoing_need_login">登录已过期，点这里重新登录</string>
+    <string name="ongoing_no_permission">通知权限未开启，点这里去系统设置</string>
+    <string name="ongoing_offline">连不上战队站点，稍后自动重试</string>
+    <string name="ongoing_dm">私聊 %1$d 条未读</string>
+    <string name="ongoing_group">战队群 %1$d 条未读</string>
+    <string name="ongoing_action_check">立即检查</string>
+    <string name="ongoing_action_settings">设置</string>
+
+    <string name="channel_ongoing">运行状态</string>
+    <string name="channel_ongoing_desc">常驻通知，让提醒不被系统回收</string>
+    <string name="channel_message">新消息</string>
+    <string name="channel_message_desc">私聊与战队群的新消息提醒</string>
+
+    <string name="notif_group_title">战队群</string>
+    <string name="notif_group_multi">%1$s 条新消息</string>
+    <string name="notif_dm_unread">%1$d 条未读</string>
+
+    <string-array name="poll_rate_labels">
+        <item>每 15 秒（推荐）</item>
+        <item>每 1 分钟</item>
+        <item>每 5 分钟（省电）</item>
+    </string-array>
+</resources>

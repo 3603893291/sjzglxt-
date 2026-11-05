@@ -8,6 +8,7 @@ use app\model\DutyMember;
 use app\model\DutySwap;
 use app\model\User;
 use app\service\DutyService;
+use app\service\GameSide;
 
 /**
  * 值班表管理（v5.6.0，duty 权限）
@@ -27,10 +28,14 @@ class DutyAdmin extends AdminBase
         if (!admin_can('duty')) {
             return $this->noPerm();
         }
-        $cfg = DutyService::config();
+        // v5.36.0：值班分端时，管理端跟着当前专区走；这一端还没单独配过就沿用共享那份预览
+        $split = GameSide::moduleOn('duty');
+        $zone  = $split ? GameSide::zone(null, true) : '';
+        $cfg   = $split ? DutyService::configExact($zone) : DutyService::config();
+        $effective = $cfg ?: DutyService::config($zone);
         $members = [];
-        if ($cfg) {
-            $rows = DutyMember::where('config_id', $cfg->id)
+        if ($effective) {
+            $rows = DutyMember::where('config_id', $effective->id)
                 ->order('sort', 'asc')->order('id', 'asc')->select()->toArray();
             $uids = array_column($rows, 'user_id');
             $names = User::whereIn('id', $uids)->column('nickname, username', 'id');
@@ -45,7 +50,7 @@ class DutyAdmin extends AdminBase
         $preview = [];
         for ($i = 0; $i < 7; $i++) {
             $date = date('Y-m-d', strtotime('+' . $i . ' day'));
-            $preview[] = ['date' => $date] + (DutyService::dutyOn($date, $cfg) ?: ['user_id' => 0, 'nickname' => '', 'swapped' => false, 'swapped_from' => '']);
+            $preview[] = ['date' => $date] + (DutyService::dutyOn($date, $effective) ?: ['user_id' => 0, 'nickname' => '', 'swapped' => false, 'swapped_from' => '']);
         }
         // 换班记录（最近 30 条）
         $swaps = DutySwap::order('id', 'desc')->limit(30)->select()->toArray();
@@ -62,10 +67,25 @@ class DutyAdmin extends AdminBase
         unset($s);
 
         // 可轮值成员候选（在册正常成员）
-        $candidates = User::where('status', 'approved')->field('id, username, nickname')->order('id', 'asc')->select();
+        // v5.15.0(S-M2)：username 就是 QQ 号。仅持 duty 权限的副管理员不该拿到全队完整号码，
+        // 这里补上与 Admin::teams 名单同一套 qq_full 脱敏口径
+        $uq = User::where('status', 'approved');
+        if ($split) {
+            $uq->whereIn('game_side', [$zone, '']);   // 这一端的值班只排本端与不分类的人
+        }
+        $candidates = $uq->field('id, username, nickname')->order('id', 'asc')->select()->toArray();
+        $canFullQq  = admin_can('qq_full');
+        foreach ($candidates as &$c) {
+            $c['username'] = $canFullQq ? (string)$c['username'] : mask_qq((string)$c['username']);
+        }
+        unset($c);
 
         return api_ok([
+            'split'      => $split,
+            'zone'       => $zone,
+            'zone_label' => $split ? GameSide::zoneLabel($zone) : '全队',
             'config'     => $cfg,
+            'inherited'  => $split && !$cfg && $effective ? true : false,
             'members'    => $members,
             'preview'    => $preview,
             'swaps'      => $swaps,
@@ -91,14 +111,17 @@ class DutyAdmin extends AdminBase
         }
         $anchor = date('Y-m-d', strtotime($anchor));
 
-        $cfg = DutyService::config();
-        $data = ['duty_type' => 'room_host', 'cycle' => $cycle, 'anchor_date' => $anchor, 'enabled' => $enabled];
+        $split = GameSide::moduleOn('duty');
+        $zone  = $split ? GameSide::zone(null, true) : '';
+        $cfg = $split ? DutyService::configExact($zone) : DutyService::config();
+        $data = ['duty_type' => 'room_host', 'game_side' => $zone, 'cycle' => $cycle, 'anchor_date' => $anchor, 'enabled' => $enabled];
         if ($cfg) {
             $cfg->save($data);
         } else {
             DutyConfig::create($data);
         }
-        admin_log('值班表', '保存值班配置：' . ($cycle === 'week' ? '按周' : '按天') . '轮换，锚点 ' . $anchor . ($enabled ? '，已启用' : '，已停用'));
+        admin_log('值班表', '保存值班配置' . ($split ? '（' . GameSide::zoneLabel($zone) . '）' : '') . '：'
+            . ($cycle === 'week' ? '按周' : '按天') . '轮换，锚点 ' . $anchor . ($enabled ? '，已启用' : '，已停用'));
         return api_ok([], '值班配置已保存');
     }
 
@@ -108,17 +131,23 @@ class DutyAdmin extends AdminBase
         if (!admin_can('duty')) {
             return $this->noPerm();
         }
-        $cfg = DutyService::config();
+        $split = GameSide::moduleOn('duty');
+        $zone  = $split ? GameSide::zone(null, true) : '';
+        $cfg = $split ? DutyService::configExact($zone) : DutyService::config();
         if (!$cfg) {
-            return api_err('请先保存值班配置');
+            return api_err($split ? '这个专区还没有单独的值班配置，请先保存上面的配置' : '请先保存值班配置');
         }
         $uids = $this->request->post('user_ids/a', []);
         $uids = array_values(array_unique(array_map('intval', $uids)));
         if (!$uids) {
             return api_err('请至少勾选一名轮值成员');
         }
-        // 校验成员在册
-        $valid = User::whereIn('id', $uids)->where('status', 'approved')->column('id');
+        // 校验成员在册；分端时还要是本端或不分类的人
+        $vq = User::whereIn('id', $uids)->where('status', 'approved');
+        if ($split) {
+            $vq->whereIn('game_side', [$zone, '']);
+        }
+        $valid = $vq->column('id');
         $bad = array_diff($uids, $valid);
         if ($bad) {
             return api_err('包含无效成员');

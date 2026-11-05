@@ -9,6 +9,7 @@ use app\model\TrainingRound;
 use app\model\TrainingSignup;
 use app\model\User;
 use app\service\BattleService;
+use app\service\GameSide;
 use think\facade\Db;
 
 /**
@@ -36,11 +37,13 @@ class Training extends AuthBase
     public function index()
     {
         $status = (string)$this->request->get('status', '');
-        $query  = TrainingMatch::order('id', 'desc')->limit(100);
+        $query  = TrainingMatch::order('id', 'desc');
+        // v5.36.0：分端时成员只看本端 + 全队共享；持 training 权限的管理员要能管两端
+        $query  = GameSide::scope($query, 'training', admin_can('training'));
         if (in_array($status, ['signup', 'ongoing', 'finished', 'canceled'], true)) {
             $query->where('status', $status);
         }
-        $list = $query->select()->toArray();
+        $list = $query->limit(100)->select()->toArray();
         // 附加：队名/发起人名/比分
         $teamIds = $userIds = [];
         foreach ($list as $r) {
@@ -67,7 +70,7 @@ class Training extends AuthBase
     public function detail($id)
     {
         $m = TrainingMatch::find((int)$id);
-        if (!$m) {
+        if (!$m || !GameSide::canSee('training', (string)$m->game_side, admin_can('training'))) {
             return api_err('训练赛不存在', 404);
         }
         $rounds  = TrainingRound::where('match_id', $m->id)->order('round_no', 'asc')->select();
@@ -111,6 +114,7 @@ class Training extends AuthBase
         $deadline = trim((string)$this->request->post('signup_deadline', ''));
         $teamA = (int)$this->request->post('team_a_id', 0);
         $teamB = (int)$this->request->post('team_b_id', 0);
+        $side  = GameSide::moduleOn('training') ? GameSide::clean($this->request->post('game_side', '')) : '';
 
         if (!in_array($mode, ['squad', 'free'], true)) {
             return api_err('对抗模式不正确');
@@ -134,6 +138,13 @@ class Training extends AuthBase
             if (!Team::find($teamA) || !Team::find($teamB)) {
                 return api_err('小队不存在');
             }
+            if ($side !== '') {
+                // 分端的比赛只能拉本端或全队共享的小队
+                $bad = Team::whereIn('id', [$teamA, $teamB])->whereNotIn('game_side', [$side, ''])->find();
+                if ($bad) {
+                    return api_err('所选小队不属于这个专区');
+                }
+            }
         } else {
             if ($deadline === '' || strtotime($deadline) === false) {
                 return api_err('自由分组需填写报名截止时间');
@@ -155,6 +166,7 @@ class Training extends AuthBase
             'signup_deadline' => $mode === 'free' ? date('Y-m-d H:i:s', strtotime($deadline)) : null,
             'status'          => 'signup',
             'created_by'      => $user->id,
+            'game_side'       => $side,
         ]);
         // 固定地图模式直接生成小局骨架
         if ($mapMode === 'fixed') {
@@ -189,11 +201,14 @@ class Training extends AuthBase
             return api_err('未登录', 401, 401);
         }
         $m = TrainingMatch::find((int)$id);
-        if (!$m) {
+        if (!$m || !GameSide::canSee('training', (string)$m->game_side)) {
             return api_err('训练赛不存在', 404);
         }
         if ($m->mode !== 'free') {
             return api_err('小队对抗模式无需报名');
+        }
+        if (!GameSide::canJoin((string)$m->game_side)) {
+            return api_err('这场训练赛属于另一个专区，你报名不了');
         }
         if ($m->status !== 'signup') {
             return api_err('当前状态不可报名');

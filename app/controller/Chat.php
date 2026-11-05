@@ -4,6 +4,7 @@ declare (strict_types = 1);
 namespace app\controller;
 
 use app\model\ChatMessage;
+use app\model\User;
 use think\facade\Cache;
 
 /**
@@ -108,8 +109,10 @@ class Chat extends AuthBase
     // 管理员：撤回消息
     public function recall($id)
     {
-        if (!is_admin()) {
-            return api_err('无权限', 403, 403);
+        // v5.15.0(S-L3)：撤回他人消息与「禁言」同属聊天治理动作，不该只凭 role=admin 就能做
+        // ——此前零权限的挂名管理员可以撤回任意成员的消息
+        if (!admin_can('mute') && !admin_can('global_mute')) {
+            return api_err('无权限：撤回消息需要禁言或全局禁言权限', 403, 403);
         }
         $msg = ChatMessage::find((int)$id);
         if (!$msg) {
@@ -128,5 +131,31 @@ class Chat extends AuthBase
         $cur = setting('global_mute', '0') === '1';
         \app\service\Setting::set('global_mute', $cur ? '0' : '1');
         return api_ok(['global_mute' => !$cur], $cur ? '已解除全员禁言' : '已开启全员禁言');
+    }
+
+    /**
+     * 在线人数（v5.19.0：聊天室拆成「战队群 + 私聊」，两个页签头部共用这一份数据）
+     * 口径与仪表盘的在线名单完全一致：同一张表、同一个 Dashboard::ONLINE_WINDOW、
+     * 同样只出 id / 显示名 / 是否管理员——QQ、邮箱、IP 一律不进响应（这份名单全员可见）。
+     * 隐身巡查不写 last_active_at（见 AuthCheck），巡查中的平台管理员不会出现在这里。
+     */
+    public function online()
+    {
+        $cut = date('Y-m-d H:i:s', time() - Dashboard::ONLINE_WINDOW);
+        $count = (int)User::where('status', 'approved')->where('last_active_at', '>', $cut)->count();
+        $rows = User::where('status', 'approved')->where('last_active_at', '>', $cut)
+            ->order('last_active_at', 'desc')->limit(80)->select();
+        $list = [];
+        foreach ($rows as $u) {
+            $list[] = ['id' => (int)$u->id, 'name' => user_display_name($u),
+                'is_admin' => (string)$u->role === 'admin'];
+        }
+        return api_ok([
+            'count'     => $count,
+            'total'     => (int)User::where('status', 'approved')->count(),
+            'window'    => Dashboard::ONLINE_WINDOW,
+            'list'      => $list,
+            'truncated' => $count > count($list),
+        ]);
     }
 }

@@ -11,20 +11,20 @@
 # -------- HTTP：全部 301 到 HTTPS --------
 server {
     listen       80;
-    server_name  yys.dpx1.icu;               # 改成你的域名
+    server_name  your-domain.com;               # 改成你的域名
     return       301 https://$host$request_uri;
 }
 
 # -------- HTTPS 主站点 --------
 server {
     listen       443 ssl;
-    server_name  yys.dpx1.icu;               # 改成你的域名
-    # v5.0.0 目录制多租户：只需绑定一个主域名（如 yys.dpx1.icu），
+    server_name  your-domain.com;               # 改成你的域名
+    # v5.0.0 目录制多租户：只需绑定一个主域名（如 your-domain.com），
     # 根路径为入驻平台，/{slug}/ 目录为各战队站点，ThinkPHP 按路径首段分流，无需泛解析/通配符证书
 
     # SSL 证书（普通单域名证书即可）
-    ssl_certificate      /etc/nginx/ssl/yys.dpx1.icu.pem;       # Windows 用正斜杠路径
-    ssl_certificate_key  /etc/nginx/ssl/yys.dpx1.icu.key;
+    ssl_certificate      /etc/nginx/ssl/your-domain.com.pem;       # Windows 用正斜杠路径
+    ssl_certificate_key  /etc/nginx/ssl/your-domain.com.key;
     ssl_protocols        TLSv1.2 TLSv1.3;
     ssl_ciphers          HIGH:!aNULL:!MD5;
     ssl_session_cache    shared:SSL:10m;
@@ -33,8 +33,8 @@ server {
     root   "C:/work/game-team-system/public";   # Windows 路径示例，用正斜杠
     # root "/var/www/game-team-system/public";  # Linux 路径示例
 
-    # 根目录优先命中静态首页 index.html，其次才是 index.php
-    index  index.html index.php;
+    # v5.27.0：官网首页由 ThinkPHP 渲染（view/home.html），index.php 必须排在最前
+    index  index.php index.html;
 
     # 上传大小限制（普通上传 5MB；v5.2 起有数据包导入，建议放到 128m，
     # 同时 php.ini 的 upload_max_filesize / post_max_size 需同步调大）
@@ -94,10 +94,10 @@ server {
 
 # ------------------------------------------------------------
 # 【v5.0.0 入驻平台 + 目录制多租户：部署说明】
-#   1. 单域名部署：只需主域名（如 yys.dpx1.icu）+ 普通 SSL 证书，无需泛解析/通配符证书
+#   1. 单域名部署：只需主域名（如 your-domain.com）+ 普通 SSL 证书，无需泛解析/通配符证书
 #   2. 目录分流：根路径 = 入驻平台；/{slug}/ = 各战队系统（slug 由入驻审核时确定）
 #   3. 数据库：全新安装导入 database/game_team.sql（或宝塔用 game_team_phpmyadmin.sql）
 #      v5 与 v4 结构不兼容，v4 二级域名方案已作废，无升级脚本
 #   4. 平台超管：初始账号 admin / admin123，登录后请立即修改密码
-#   5. 静态首页：public/index.html 为入驻平台宣传页（nginx index 指令优先命中）
+#   5. 官网首页：/ 由 ThinkPHP 渲染 view/home.html（v5.27.0 起不再有静态 index.html）
 # ------------------------------------------------------------

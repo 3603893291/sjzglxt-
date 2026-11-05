@@ -28,6 +28,37 @@ class Profile extends AuthBase
         return api_ok(['nickname' => $nickname], '昵称修改成功');
     }
 
+    /**
+     * 「愿意出现在战队对外展示页」——本人开关（v5.20.0）
+     * 双层里的成员那一层：队长只能整块开/关"成员风采"模块，具体谁公开由本人勾，
+     * 默认不公开。这里只认 show_public 一个字段，别顺手把 nickname/role 一起改了。
+     */
+    public function showPublic()
+    {
+        $user = current_user();
+        $on   = (int)$this->request->post('show_public', 0) === 1 ? 1 : 0;
+        $user->save(['show_public' => $on]);
+        return api_ok(['show_public' => $on], $on
+            ? '已同意：你的名字与职责标签会出现在战队对外展示页'
+            : '已撤回：对外展示页上不再出现你');
+    }
+
+    /**
+     * 「把战绩公开给本队成员」——本人开关（v5.30.0）
+     * 与 show_public 是两档：那一档把昵称与职责标签发到互联网上的展示页，这一档只让
+     * 本队人在 TA 的成员主页里看到你上传的战绩。默认不公开（列定义就是 0），
+     * 关掉之后成员主页上连"有没有战绩行"都不透出。只认 stats_public 这一个字段。
+     */
+    public function statsPublic()
+    {
+        $user = current_user();
+        $on   = (int)$this->request->post('stats_public', 0) === 1 ? 1 : 0;
+        $user->save(['stats_public' => $on]);
+        return api_ok(['stats_public' => $on], $on
+            ? '已公开：本队成员点开你的主页能看到你上传的战绩'
+            : '已收回：战绩只有你自己和管理员看得到');
+    }
+
     // 修改密码（需验证旧密码）
     public function updatePassword()
     {

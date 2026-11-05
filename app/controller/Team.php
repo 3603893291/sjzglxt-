@@ -5,6 +5,7 @@ namespace app\controller;
 
 use app\model\Team as TeamModel;
 use app\model\User;
+use app\service\GameSide;
 
 /**
  * 战队小队（v2）：自由加入 / 自由退出，无需审批
@@ -14,7 +15,9 @@ class Team extends AuthBase
     // 小队列表（含成员数、队长昵称）
     public function all()
     {
-        $teams = TeamModel::order('id', 'asc')->select();
+        $q = TeamModel::order('id', 'asc');
+        $q = GameSide::scope($q, 'team');   // v5.36.0：分端时只看本端 + 全队共享的小队
+        $teams = $q->select();
         $list  = [];
         foreach ($teams as $team) {
             $leaderName = null;
@@ -29,6 +32,7 @@ class Team extends AuthBase
                 'leader_id'    => $team->leader_id,
                 'leader_name'  => $leaderName,
                 'member_count' => User::where('team_id', $team->id)->where('status', 'approved')->count(),
+                'game_side'    => (string)$team->game_side,
                 'created_at'   => $team->created_at,
             ];
         }
@@ -80,6 +84,7 @@ class Team extends AuthBase
                 'description' => $team->description,
                 'leader_id'   => $team->leader_id,
                 'leader_name' => $leaderName,
+                'game_side'   => (string)$team->game_side,
                 'members'     => $members,
             ],
         ]);
@@ -94,8 +99,15 @@ class Team extends AuthBase
         if ($user->team_id === $teamId && $teamId > 0) {
             return api_err('你已在该小队中');
         }
-        if (!$teamId || !TeamModel::find($teamId)) {
+        $team = $teamId ? TeamModel::find($teamId) : null;
+        if (!$team) {
             return api_err('请选择要加入的小队');
+        }
+        if (!GameSide::canSee('team', (string)$team->game_side)) {
+            return api_err('这个小队属于另一个专区，你看不到');
+        }
+        if (!GameSide::canJoin((string)$team->game_side)) {
+            return api_err('这个小队属于另一个专区，你加入不了');
         }
 
         $user->save(['team_id' => $teamId]);

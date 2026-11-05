@@ -41,6 +41,11 @@ class AdminCheck
             return api_err('账号密码已变更，请重新登录', 401, 401);
         }
 
+        // v5.36.13：平台协作会话逐请求校验（撤销/到期/站长变更立即断开）
+        if (($supportErr = \app\service\Support::enforce()) !== null) {
+            return api_err($supportErr, 401, 401);
+        }
+
         return $next($request);
     }
 }

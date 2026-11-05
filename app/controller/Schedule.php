@@ -8,6 +8,7 @@ use app\model\CustomRaceEvent;
 use app\model\RaceEvent;
 use app\service\BattleService;
 use app\service\DutyService;
+use app\service\GameSide;
 use app\service\Setting;
 use app\service\TenantContext;
 use app\service\TournamentClient;
@@ -47,18 +48,22 @@ class Schedule extends AuthBase
         $hidden = $this->hidden();
         $items  = [];
 
-        // 撞车比赛
+        // 撞车比赛（v5.36.0：分端时只看本端 + 全队共享）
         if (!in_array('race', $hidden, true)) {
-            foreach (RaceEvent::whereBetween('race_time', [$start, $end])->select() as $r) {
+            $rq = GameSide::scope(RaceEvent::whereBetween('race_time', [$start, $end]), 'race');
+            foreach ($rq->select() as $r) {
                 $items[] = ['type' => 'race', 'type_label' => '撞车比赛', 'ref_id' => $r->id,
-                    'title' => $r->title, 'start_time' => $r->race_time, 'note' => ''];
+                    'title' => $r->title, 'start_time' => $r->race_time, 'note' => '',
+                    'game_side' => (string)$r->game_side];
             }
         }
         // 自建房日程
         if (!in_array('custom_race', $hidden, true)) {
-            foreach (CustomRaceEvent::whereBetween('race_time', [$start, $end])->select() as $r) {
+            $cq = GameSide::scope(CustomRaceEvent::whereBetween('race_time', [$start, $end]), 'custom_race');
+            foreach ($cq->select() as $r) {
                 $items[] = ['type' => 'custom_race', 'type_label' => '自建房比赛', 'ref_id' => $r->id,
-                    'title' => $r->title, 'start_time' => $r->race_time, 'note' => ''];
+                    'title' => $r->title, 'start_time' => $r->race_time, 'note' => '',
+                    'game_side' => (string)$r->game_side];
             }
         }
         // 约战（本队参与，含总线）
@@ -89,10 +94,11 @@ class Schedule extends AuthBase
         }
         // 自定义活动
         if (!in_array('custom', $hidden, true)) {
-            foreach (CustomEvent::whereBetween('start_time', [$start, $end])->select() as $e) {
+            $eq = GameSide::scope(CustomEvent::whereBetween('start_time', [$start, $end]), 'event');
+            foreach ($eq->select() as $e) {
                 $items[] = ['type' => 'custom', 'type_label' => '活动', 'ref_id' => $e->id,
                     'title' => $e->title, 'start_time' => $e->start_time, 'note' => $e->note,
-                    'duration_min' => (int)$e->duration_min];
+                    'duration_min' => (int)$e->duration_min, 'game_side' => (string)$e->game_side];
             }
         }
         // 值班（每日一条，全天性质）
@@ -105,7 +111,8 @@ class Schedule extends AuthBase
                 if ($duty) {
                     $items[] = ['type' => 'duty', 'type_label' => '值班', 'ref_id' => 0,
                         'title' => '房主值班：' . $duty['nickname'] . ($duty['swapped'] ? '（与 ' . $duty['swapped_from'] . ' 换班）' : ''),
-                        'start_time' => $date . ' 00:00:00', 'note' => '', 'all_day' => true];
+                        'start_time' => $date . ' 00:00:00', 'note' => '', 'all_day' => true,
+                        'game_side' => GameSide::moduleOn('duty') ? GameSide::zone() : ''];
                 }
             }
         }
@@ -143,8 +150,10 @@ class Schedule extends AuthBase
         if (!admin_can('schedule')) {
             return $this->noPerm();
         }
+        $q = CustomEvent::order('start_time', 'desc');
+        $q = GameSide::scope($q, 'event', true);   // v5.36.0：管理端跟着当前专区走
         return api_ok([
-            'list'   => CustomEvent::order('start_time', 'desc')->limit(100)->select(),
+            'list'   => $q->limit(100)->select(),
             'hidden' => $this->hidden(),
         ]);
     }
@@ -179,6 +188,11 @@ class Schedule extends AuthBase
             'duration_min' => $minutes,
             'note'         => $note,
         ];
+        // v5.36.0：这块开着分端才认端别；关着时编辑不动旧数据的端别
+        $sideSet = GameSide::moduleOn('event');
+        if ($sideSet) {
+            $data['game_side'] = GameSide::clean($this->request->post('game_side', ''));
+        }
         if ($id > 0) {
             $ev = CustomEvent::find($id);
             if (!$ev) {

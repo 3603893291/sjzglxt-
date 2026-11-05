@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\controller;
 
 use app\service\BattleHubClient;
+use app\service\BattleNotice;
 
 /**
  * 约战中心连接器（v5.4.0，session 鉴权）
@@ -58,7 +59,17 @@ class BattleHub extends AuthBase
     public function accept($id)
     {
         if ($r = $this->adminGuard()) return $r;
-        return $this->relay(BattleHubClient::action((int)$id, 'accept'));
+        $res = BattleHubClient::action((int)$id, 'accept');
+        // 本站在主站侧只是「外部战队」，成立公告发不到本站库：回传成功后取详情本地补发一条
+        if (!empty($res['ok'])) {
+            try {
+                $d = BattleHubClient::detail((int)$id);
+                if (!empty($d['ok']) && $d['data']) BattleNotice::publishLocal($d['data']);
+            } catch (\Throwable $ex) {
+                \think\facade\Log::warning('[BattleNotice] ' . $ex->getMessage());
+            }
+        }
+        return $this->relay($res);
     }
 
     public function reject($id)

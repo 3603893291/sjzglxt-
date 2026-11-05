@@ -1,0 +1,352 @@
+<?php
+/**
+ * 战队对外展示页（v5.20.0，访客可访问，服务端直出）
+ * 由 app\controller\Showcase::page() 渲染，变量：$show（Showcase::pageData）、$caps（两枚验证码键）、$head（SEO 头）
+ *
+ * 这一页不加载 React/MUI/Babel：一是公开页等不起浏览器内转译，二是没了 JS 也读得懂内容，
+ * 爬虫与"禁用 JS 的访客"看到的是同一份 HTML。所有输出都在这里过一次 $e() 转义。
+ * 版式复用站内浅色设计令牌（showcase.css 里那套 --sc-*），队长选了队色时由下面这段内联 <style> 覆写；
+ * 桌面 1280 / 移动 390 都排得开，移动端底部常驻【申请加入】。
+ * 每一块都得有自己的数据来源：没挂岗位、没荣誉、没人同意公开，那一块就整块不出现——
+ * 访客页上不写"还没有…"，那是队长该回管理端补的事，不是给访客看的笑话。
+ * v5.29.0 起这六个内容块的先后与左右分栏由队长在管理端排（Showcase::blocks），
+ * 首屏与页尾表单的位置仍然固定：那是骨架，不是内容。
+ */
+$e = function ($v) {
+    return htmlspecialchars((string)$v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+};
+$m     = $show['modules'];
+$st    = $show['stats'];
+$base  = \app\service\TenantContext::base();
+$u     = function ($p) use ($base) { return $base . '/' . ltrim($p, '/'); };
+$nicks = [];  // 已展示的昵称，防同名堆两张一样的卡
+?>
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<?= $head ?: \app\service\SeoMeta::head($show['team']['name'] . ' 战队主页') ?>
+<link rel="stylesheet" href="<?= asset('/static/css/showcase.css') ?>">
+<?php if ($show['accent'] !== []): $ac = $show['accent']; ?>
+<meta name="theme-color" content="<?= $e($ac['solid']) ?>">
+<style>:root{--sc-accent:<?= $e($ac['main']) ?>;--sc-accent-text:<?= $e($ac['text']) ?>;--sc-accent-rgb:<?= $e($ac['rgb']) ?>;--sc-accent-soft:<?= $e($ac['soft']) ?>;--sc-solid:<?= $e($ac['solid']) ?>;--sc-solid-ink:<?= $e($ac['ink']) ?>;--sc-solid-dark:<?= $e($ac['dark']) ?>;--sc-btn-off:<?= $e($ac['off']) ?>}</style>
+<?php endif; ?>
+</head>
+<body>
+
+<nav class="sc-nav">
+  <a class="sc-back" href="/hall">&#8592; 战队公示大厅</a>
+  <span class="sc-spacer"></span>
+  <?php if ($m['intent'] === 1): ?>
+    <a class="sc-btn sc-btn-sm" href="#sc-apply">申请加入</a>
+  <?php elseif ($m['post'] === 1): ?>
+    <a class="sc-btn sc-btn-sm" href="#sc-apply">我要投稿</a>
+  <?php endif; ?>
+</nav>
+
+<div class="sc-wrap">
+
+  <!-- ② 首屏：banner 是主视觉，队名走实心队色带；口号与统计在浅色面上，小字不跟照片抢 -->
+  <section class="sc-hero">
+    <?php if ($show['team']['banner'] !== ''): ?><img class="sc-banner" src="<?= $e($show['team']['banner']) ?>" alt=""><?php endif; ?>
+    <div class="sc-band">
+      <div class="sc-badge-logo">
+        <?php if ($show['team']['logo'] !== ''): ?><img src="<?= $e($show['team']['logo']) ?>" alt="队徽"><?php else: ?><?= $e(mb_substr($show['team']['name'], 0, 1)) ?><?php endif; ?>
+      </div>
+      <h1 class="sc-team-name"><?= $e($show['team']['name']) ?></h1>
+      <span class="sc-chip<?= $show['recruiting'] === 1 ? ' live' : ' closed' ?>"><?= $show['recruiting'] === 1 ? '招募中' : '暂不招募' ?></span>
+    </div>
+    <div class="sc-inner">
+      <?php if ($show['team']['slogan'] !== ''): ?><p class="sc-slogan"><?= $e($show['team']['slogan']) ?></p><?php endif; ?>
+
+      <?php if ($m['stats'] === 1):
+          // 每个格子都得有自己的数据来源：没打完过约战就不出「约战胜场」，没人上传战绩就不出胜率
+          $hard = []; $soft = [];
+          if ($st['members'] > 0) {
+              $hard[] = [(string)(int)$st['members'], '在册成员'];
+          }
+          if ($st['win_rate'] !== null) {
+              $lbl = '成员上传胜率均值' . ($st['win_rate_sample'] > 0 ? '（' . (int)$st['win_rate_sample'] . ' 人）' : '');
+              if ($st['win_rate_sample'] >= 3) { $hard[] = [$e($st['win_rate']) . '%', $lbl]; }
+              else { $soft[] = [$e($st['win_rate']) . '%', $lbl]; }
+          }
+          if ($st['battles'] > 0) {
+              $v = (int)$st['wins'] . '<span style="font-size:12px;color:var(--sc-dim)">/' . (int)$st['battles'] . '</span>';
+              if ($st['battles'] >= 3) { $hard[] = [$v, '约战胜场']; }
+              else { $soft[] = [$v, '约战胜场']; }
+          }
+          if ($st['since_days'] > 0) {
+              $hard[] = [(string)(int)$st['since_days'], '成立天数'];
+          }
+      ?>
+      <?php if (count($hard) >= 2): ?>
+      <div class="sc-stats" style="--sc-n:<?= count($hard) ?>;--sc-m:<?= min(2, count($hard)) ?>">
+        <?php foreach ($hard as $c): ?>
+        <div class="sc-stat"><b><?= $c[0] ?></b><span><?= $c[1] ?></span></div>
+        <?php endforeach; ?>
+      </div>
+      <?php endif; ?>
+      <?php if ($soft !== []): ?>
+      <div class="sc-stats soft">
+        <?php foreach ($soft as $c): ?>
+        <div class="sc-stat"><b><?= $c[0] ?></b><span><?= $c[1] ?></span></div>
+        <?php endforeach; ?>
+      </div>
+      <?php endif; ?>
+      <?php if ($st['recent'] !== []): ?>
+        <div style="margin-top:12px;font-size:12px;color:var(--sc-dim)">近 5 场
+          <span class="sc-dots">
+            <?php foreach ($st['recent'] as $r): ?><i class="<?= $e($r) ?>"></i><?php endforeach; ?>
+          </span>
+          <span style="color:var(--sc-dim)">（胜<?= (int)$st['wins'] ?> 负<?= (int)$st['losses'] ?> 平<?= (int)$st['draws'] ?>）</span>
+        </div>
+      <?php endif; ?>
+      <?php endif; ?>
+    </div>
+  </section>
+
+<?php
+// v5.29.0 队长 DIY：块顺序与分栏来自 Showcase::blocks()（六块一个不少、脏值服务端已洗过），
+// 模板只负责按那个顺序把"确实有内容"的块拼出来。桌面两栏各排一列，手机上摊平成一条——
+// section 上那个 order:序号 就是队长排的次序（见 showcase.css 里 .sc-col 的 display:contents）。
+$section = function (string $k, int $o) use ($e, $m, $show, &$nicks): string {
+    // 开关关了或没内容 → 整块不出现，不留空标题（跟原来一条口径）
+    if ($k === 'recruit'  && ($m['recruit'] !== 1  || $show['positions'] === [])) return '';
+    if ($k === 'honor'    && ($m['honor'] !== 1    || $show['honor'] === []))     return '';
+    if ($k === 'members'  && ($m['members'] !== 1  || $show['members'] === []))   return '';
+    if ($k === 'gallery'  && ($m['gallery'] !== 1  || $show['gallery'] === []))   return '';
+    if ($k === 'notices'  && ($m['notices'] !== 1  || $show['notices'] === []))   return '';
+    if ($k === 'contents' && ($m['contents'] !== 1 || $show['contents'] === []))  return '';
+    ob_start();
+?>
+<section class="sc-sec" style="order:<?= $o ?>">
+  <?php if ($k === 'recruit'): ?>
+  <h2 class="sc-h2">招募岗位 <span class="sc-more"><?= $show['recruiting'] === 1 ? '开放申请中' : '当前不开放' ?></span></h2>
+    <div class="sc-grid pos">
+      <?php foreach ($show['positions'] as $p): ?>
+        <div class="sc-card">
+          <p class="k"><?= $e($p['name']) ?></p>
+          <p class="v"><?= $e($p['require']) ?></p>
+          <p class="v" style="margin-top:8px;color:var(--sc-accent2)"><?= $p['seats'] > 0 ? '招 ' . (int)$p['seats'] . ' 人' : '名额不限' ?></p>
+        </div>
+      <?php endforeach; ?>
+    </div>
+  <?php elseif ($k === 'honor'): ?>
+  <h2 class="sc-h2">荣誉墙 <span class="sc-more"><?= count($show['honor']) ?> 项</span></h2>
+    <div class="sc-grid honor">
+      <?php foreach ($show['honor'] as $h): ?>
+        <div class="sc-card honor">
+          <div class="cup sc-trophy">&#127942;</div>
+          <p class="k" style="margin-top:8px"><?= $e($h['title']) ?></p>
+          <?php if ($h['note'] !== ''): ?><p class="v"><?= $e($h['note']) ?></p><?php endif; ?>
+          <img src="<?= $e($h['image']) ?>" alt="<?= $e($h['title']) ?>" style="height:96px;width:100%;object-fit:cover;border-radius:8px;margin-top:10px">
+        </div>
+      <?php endforeach; ?>
+    </div>
+  <?php elseif ($k === 'members'): ?>
+  <h2 class="sc-h2">成员风采 <span class="sc-more">仅展示本人同意公开的成员</span></h2>
+    <div class="sc-grid people">
+      <?php foreach ($show['members'] as $p): ?>
+        <?php if (isset($nicks[$p['name']])) continue; $nicks[$p['name']] = 1; ?>
+        <div class="sc-card sc-person">
+          <div class="sc-avatar" style="background:<?= $e($p['color']) ?>"><?= $e($p['word']) ?></div>
+          <div class="n"><?= $e($p['name']) ?></div>
+          <?php if ($p['tag'] !== ''): ?><div class="t"><?= $e($p['tag']) ?></div><?php endif; ?>
+        </div>
+      <?php endforeach; ?>
+    </div>
+  <?php elseif ($k === 'gallery'): ?>
+  <h2 class="sc-h2">战队图集</h2>
+    <div class="sc-grid gal">
+      <?php foreach ($show['gallery'] as $g): ?>
+        <div class="sc-shot" data-full="<?= $e($g['image']) ?>">
+          <img src="<?= $e($g['image']) ?>" alt="<?= $e($g['title']) ?>" loading="lazy">
+          <?php if ($g['title'] !== '' || $g['note'] !== ''): ?>
+            <div class="cap"><?= $e($g['title']) ?><?= $g['note'] !== '' ? ' · ' . $e($g['note']) : '' ?></div>
+          <?php endif; ?>
+        </div>
+      <?php endforeach; ?>
+    </div>
+  <?php elseif ($k === 'notices'): ?>
+  <h2 class="sc-h2">战队动态</h2>
+    <div class="sc-feed">
+      <?php foreach ($show['notices'] as $n): ?>
+        <div class="it">
+          <h4><?= $e($n['title']) ?></h4>
+          <p><?= $e($n['content']) ?></p>
+          <?php if ($n['image'] !== ''): ?><img src="<?= $e($n['image']) ?>" alt="" style="margin-top:10px;border-radius:8px;max-height:220px"><?php endif; ?>
+          <div class="d"><?= $e($n['created_at']) ?></div>
+        </div>
+      <?php endforeach; ?>
+    </div>
+  <?php else: ?>
+  <h2 class="sc-h2">精选内容</h2>
+    <div class="sc-grid gal">
+      <?php foreach ($show['contents'] as $c): ?>
+        <div class="sc-pick">
+          <div class="tag"><?= $c['kind'] === 'gun' ? '改枪码' : ($c['kind'] === 'guide' ? '攻略' : '成员投稿') ?><?= $c['nick'] !== '' ? ' · ' . $e($c['nick']) : '' ?></div>
+          <?php if ($c['title'] !== ''): ?><h4><?= $e($c['title']) ?></h4><?php endif; ?>
+          <?php if ($c['image'] !== ''): ?><img src="<?= $e($c['image']) ?>" alt="" style="border-radius:8px;margin-bottom:8px;max-height:180px;width:100%;object-fit:cover"><?php endif; ?>
+          <div class="<?= $c['kind'] === 'gun' ? 'code' : '' ?>"<?= $c['kind'] === 'gun' ? '' : ' style="white-space:pre-wrap"' ?>><?= $e(mb_substr($c['text'], 0, 200)) ?></div>
+        </div>
+      <?php endforeach; ?>
+    </div>
+  <?php endif; ?>
+</section>
+<?php
+    return (string)ob_get_clean();
+};
+
+$mainHtml = '';
+$sideHtml = '';
+foreach ($show['blocks'] as $idx => $blk) {
+    $html = $section((string)$blk['key'], (int)$idx);
+    if ($html === '') {
+        continue;
+    }
+    if ((int)$blk['side'] === 1) {
+        $sideHtml .= $html;
+    } else {
+        $mainHtml .= $html;
+    }
+}
+?>
+<?php if ($mainHtml !== '' || $sideHtml !== ''): ?>
+<div class="sc-cols<?= $mainHtml === '' ? ' only-side' : '' ?>">
+  <?php if ($mainHtml !== ''): ?><div class="sc-col"><?= $mainHtml ?></div><?php endif; ?>
+  <?php if ($sideHtml !== ''): ?><div class="sc-col side"><?= $sideHtml ?></div><?php endif; ?>
+</div>
+<?php endif; ?>
+
+  <!-- 申请表单：投稿 / 入队意向 -->
+  <?php if ($m['post'] === 1 || $m['intent'] === 1): ?>
+  <section class="sc-sec" id="sc-apply">
+    <h2 class="sc-h2">联系战队</h2>
+    <div class="sc-forms">
+
+      <?php if ($m['intent'] === 1): ?>
+      <form class="sc-form" method="post" action="<?= $e($u('api/show/submit')) ?>">
+        <h3>我想加入</h3>
+        <p class="hint">填完等队长联系。<b>这不等于已入队</b>——还需要在本站注册账号并通过战队审核。</p>
+        <input type="hidden" name="type" value="intent">
+        <input type="hidden" name="t" value="<?= time() ?>">
+        <div class="sc-field sc-fp"><label>请勿填写</label><input type="text" name="website" tabindex="-1" autocomplete="off"></div>
+        <div class="sc-field"><label>QQ 号</label><input name="qq" inputmode="numeric" maxlength="11" required placeholder="队长用它联系你"></div>
+        <div class="sc-field"><label>游戏昵称</label><input name="nick" maxlength="32" required></div>
+        <?php if ($show['positions'] !== []): ?>
+        <div class="sc-field"><label>意向岗位</label>
+          <select name="position" required>
+            <?php foreach ($show['positions'] as $p): ?><option value="<?= $e($p['name']) ?>"><?= $e($p['name']) ?></option><?php endforeach; ?>
+            <option value="其他">其他</option>
+          </select>
+        </div>
+        <?php endif; ?>
+        <div class="sc-field"><label>自我介绍（500 字内）</label><textarea name="content" maxlength="500" required></textarea></div>
+        <div class="sc-field"><label>验证码</label>
+          <div class="sc-caprow">
+            <input name="captcha" maxlength="4" autocomplete="off" required placeholder="4 位字符">
+            <input type="hidden" name="captcha_key" value="<?= $e($caps['intent']) ?>">
+            <img src="<?= $e($u('show/captcha/' . $caps['intent'])) ?>" alt="验证码" title="点击重新载入">
+          </div>
+        </div>
+        <button class="sc-btn" type="submit">提交意向</button>
+        <div class="sc-msg" role="status"></div>
+      </form>
+      <?php endif; ?>
+
+      <?php if ($m['post'] === 1): ?>
+      <form class="sc-form" method="post" action="<?= $e($u('api/show/submit')) ?>" enctype="multipart/form-data">
+        <h3>我要投稿</h3>
+        <p class="hint">投稿经队长采纳<?= $m['contents'] === 1 ? '后会出现在这页的「精选内容」里' : '后由队长在站内处理' ?>，同时留下你的游戏昵称。</p>
+        <input type="hidden" name="type" value="post">
+        <input type="hidden" name="t" value="<?= time() ?>">
+        <div class="sc-field sc-fp"><label>请勿填写</label><input type="text" name="website" tabindex="-1" autocomplete="off"></div>
+        <div class="sc-field"><label>游戏昵称</label><input name="nick" maxlength="32" required></div>
+        <div class="sc-field"><label>联系方式（选填，QQ 号）</label><input name="qq" inputmode="numeric" maxlength="11"></div>
+        <div class="sc-field"><label>投稿内容（500 字内）</label><textarea name="content" maxlength="500" required placeholder="战绩分享、打法心得、想说的话……"></textarea></div>
+        <div class="sc-field"><label>配图（选填，jpg/png/gif/webp，≤5MB）</label><input type="file" name="image" accept="image/jpeg,image/png,image/gif,image/webp"></div>
+        <div class="sc-field"><label>验证码</label>
+          <div class="sc-caprow">
+            <input name="captcha" maxlength="4" autocomplete="off" required placeholder="4 位字符">
+            <input type="hidden" name="captcha_key" value="<?= $e($caps['post']) ?>">
+            <img src="<?= $e($u('show/captcha/' . $caps['post'])) ?>" alt="验证码" title="点击重新载入">
+          </div>
+        </div>
+        <button class="sc-btn" type="submit">提交投稿</button>
+        <div class="sc-msg" role="status"></div>
+      </form>
+      <?php endif; ?>
+
+    </div>
+    <?php if ($show['team']['contact'] !== ''): ?>
+      <p class="sc-contact" style="margin-top:14px">战队公开联系方式：<b><?= $e($show['team']['contact']) ?></b></p>
+    <?php endif; ?>
+  </section>
+  <?php endif; ?>
+
+  <footer class="sc-foot">
+    本页内容由战队自行维护，平台已完成入驻审核。<br>
+    <a href="/hall">战队公示大厅</a>
+    &nbsp;·&nbsp; <a href="<?= $e($u('register')) ?>">注册加入本站战队</a>
+    <?php if ($show['updated'] !== ''): ?> &nbsp;·&nbsp; 最近更新 <?= $e($show['updated']) ?><?php endif; ?>
+    <br>&copy; <?= date('Y') ?> <?= $e($show['team']['name']) ?>
+  </footer>
+</div>
+
+<?php if ($m['intent'] === 1): ?><a class="sc-cta" href="#sc-apply">申请加入</a>
+<?php elseif ($m['post'] === 1): ?><a class="sc-cta ghost" href="#sc-apply">我要投稿</a><?php endif; ?>
+
+<div class="sc-lb" id="scLb"><span class="x">&times;</span><img alt=""></div>
+
+<script>
+(function () {
+  var lb = document.getElementById('scLb');
+  if (lb) {
+    Array.prototype.forEach.call(document.querySelectorAll('.sc-shot'), function (el) {
+      el.addEventListener('click', function () {
+        lb.querySelector('img').src = el.getAttribute('data-full');
+        lb.classList.add('on');
+      });
+    });
+    lb.addEventListener('click', function () { lb.classList.remove('on'); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') lb.classList.remove('on'); });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('form.sc-form'), function (f) {
+    var btn = f.querySelector('button[type=submit]');
+    var msg = f.querySelector('.sc-msg');
+    f.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      btn.disabled = true;
+      msg.className = 'sc-msg';
+      msg.textContent = '提交中…';
+      fetch(f.action, { method: 'POST', body: new FormData(f), credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j && j.code === 0) {
+            msg.className = 'sc-msg ok';
+            msg.textContent = j.msg || '已收到';
+            Array.prototype.forEach.call(f.querySelectorAll('input,textarea,select,button'), function (el) { el.disabled = true; });
+            btn.disabled = false;
+          } else {
+            msg.className = 'sc-msg err';
+            msg.textContent = (j && j.msg) || '提交失败，请稍后再试';
+            btn.disabled = false;
+          }
+        })
+        .catch(function () {
+          msg.className = 'sc-msg err';
+          msg.textContent = '网络异常，请稍后再试';
+          btn.disabled = false;
+        });
+    });
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('.sc-caprow img'), function (im) {
+    im.addEventListener('click', function () { im.src = im.getAttribute('src').split('#')[0] + '#' + Date.now(); });
+  });
+})();
+</script>
+</body>
+</html>

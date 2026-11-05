@@ -48,7 +48,7 @@ class BattleService
     public static function partyName(string $type, int $id): string
     {
         if ($type === 'tenant') {
-            return (string)(Db::name('tenants')->where('id', $id)->value('name') ?: '已注销站点');
+            return (string)(Db::name('tenants')->where('id', $id)->value('name') ?: '已注销战队');
         }
         if ($type === 'external') {
             return (string)(Db::name('external_teams')->where('id', $id)->value('name') ?: '已注销外部战队');
@@ -201,11 +201,14 @@ class BattleService
         $b = Db::name('battles')->where('id', $battleId)->find();
         if (!$b) return '约战不存在';
         if ($b['status'] !== 'pending') return '该约战当前状态不能接受';
-        Db::name('battles')->where('id', $battleId)->update([
+        // 条件更新（pending -> accepted）：并发重复提交只有一次改到行，成立公告也因此只会发一条
+        $n = Db::name('battles')->where('id', $battleId)->where('status', 'pending')->update([
             'status'      => 'accepted',
             'accepted_by' => mb_substr($actorDesc, 0, 64),
             'updated_at'  => date('Y-m-d H:i:s'),
         ]);
+        if ($n < 1) return '该约战当前状态不能接受';
+        BattleNotice::publishAccept($b);
         return null;
     }
 

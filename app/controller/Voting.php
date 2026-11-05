@@ -7,6 +7,7 @@ use app\model\User;
 use app\model\Vote;
 use app\model\VoteBallot;
 use app\model\VoteOption;
+use app\service\GameSide;
 
 /**
  * 轻量投票（v5.6.0）
@@ -78,7 +79,10 @@ class Voting extends AuthBase
     // 列表：进行中 / 已结束分开
     public function index()
     {
-        $list = Vote::order('id', 'desc')->limit(100)->select()->toArray();
+        $q = Vote::order('id', 'desc');
+        // v5.36.0：成员只看本端 + 全队共享；持 vote 权限的管理员要能管两端的投票
+        $q = GameSide::scope($q, 'vote', admin_can('vote'));
+        $list = $q->limit(100)->select()->toArray();
         $open = $closed = [];
         foreach ($list as $v) {
             // 到点自动冻结（惰性）
@@ -99,7 +103,7 @@ class Voting extends AuthBase
     public function detail($id)
     {
         $v = Vote::find((int)$id);
-        if (!$v) {
+        if (!$v || !GameSide::canSee('vote', (string)$v->game_side, admin_can('vote'))) {
             return api_err('投票不存在', 404);
         }
         return api_ok($this->assemble($v, true));
@@ -116,8 +120,11 @@ class Voting extends AuthBase
             return api_err('被禁言或封禁的成员不能投票');
         }
         $v = Vote::find((int)$id);
-        if (!$v) {
+        if (!$v || !GameSide::canSee('vote', (string)$v->game_side)) {
             return api_err('投票不存在', 404);
+        }
+        if (!GameSide::canJoin((string)$v->game_side)) {
+            return api_err('这个投票属于另一个专区，你投不了');
         }
         if (!$this->isOpen($v)) {
             return api_err('投票已结束');
@@ -153,8 +160,11 @@ class Voting extends AuthBase
             return api_err('未登录', 401, 401);
         }
         $v = Vote::find((int)$id);
-        if (!$v) {
+        if (!$v || !GameSide::canSee('vote', (string)$v->game_side)) {
             return api_err('投票不存在', 404);
+        }
+        if (!GameSide::canJoin((string)$v->game_side)) {
+            return api_err('这个投票属于另一个专区');
         }
         if (!$v->allow_add_option) {
             return api_err('该投票不允许补充选项');
@@ -220,6 +230,7 @@ class Voting extends AuthBase
             'deadline'         => date('Y-m-d H:i:s', strtotime($deadline)),
             'status'           => 'open',
             'created_by'       => $user->id,
+            'game_side'        => GameSide::moduleOn('vote') ? GameSide::clean($this->request->post('game_side', '')) : '',
         ]);
         foreach ($options as $i => $opt) {
             if (mb_strlen($opt) > 128) {

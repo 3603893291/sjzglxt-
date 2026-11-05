@@ -20,6 +20,8 @@ class GunCode extends AuthBase
         $page    = max(1, (int)$this->request->get('page', 1));
         $size    = min(50, max(1, (int)$this->request->get('size', 10)));
         $keyword = trim((string)$this->request->get('keyword', ''));   // 按枪械名字搜索
+        // v5.26.0：按武器类别筛。空或 all = 全部；认不出来的值一律当没筛（不报错、不越权）
+        $category = trim((string)$this->request->get('category', ''));
 
         $me = current_user();
 
@@ -35,6 +37,9 @@ class GunCode extends AuthBase
         }
         if ($keyword !== '') {
             $query->whereLike('g.title', '%' . $keyword . '%');
+        }
+        if ($category !== '' && $category !== 'all' && isset(GunCodeModel::CATEGORIES[$category])) {
+            $query->where('g.category', $category);
         }
 
         $total = (clone $query)->count();
@@ -64,6 +69,7 @@ class GunCode extends AuthBase
             'size'     => $size,
             'me_id'    => $me->id,
             'is_admin' => is_admin(),
+            'categories' => GunCodeModel::categoryOptions(),
         ]);
     }
 
@@ -88,6 +94,7 @@ class GunCode extends AuthBase
             'title'       => $data['title'],
             'code'        => $data['code'],
             'description' => $data['description'],
+            'category'    => $data['category'],
             'status'      => 'published',
         ]);
 
@@ -116,6 +123,7 @@ class GunCode extends AuthBase
             'title'       => $data['title'],
             'code'        => $data['code'],
             'description' => $data['description'],
+            'category'    => $data['category'],
         ]);
 
         return api_ok([], '修改成功');
@@ -241,10 +249,13 @@ class GunCode extends AuthBase
 
     private function readPayload(): array
     {
+        $cat = trim((string)$this->request->post('category', ''));
         return [
             'title'       => trim((string)$this->request->post('title', '')),
             'code'        => trim((string)$this->request->post('code', '')),
             'description' => trim((string)$this->request->post('description', '')),
+            // 前端下拉里没有「全部」这一项；万一有人直接发 all，落到未分类而不是报错
+            'category'    => ($cat === '' || $cat === 'all') ? 'other' : $cat,
         ];
     }
 
@@ -258,6 +269,9 @@ class GunCode extends AuthBase
         }
         if (mb_strlen($data['description']) > 500) {
             return '说明最长 500 字';
+        }
+        if (!isset(GunCodeModel::CATEGORIES[$data['category']])) {
+            return '请选择正确的武器类别';
         }
         return null;
     }
